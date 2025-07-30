@@ -1228,6 +1228,7 @@ def get_rbac_user_detail(user_id):
 
 @app.route('/api/rbac/users/<int:user_id>/permissions', methods=['GET'])
 @login_required
+@requires_permission('page_rbac_management')
 def get_user_permissions_detail(user_id):
     """Get user permissions with source information - FIXED VERSION"""
     try:
@@ -1316,8 +1317,9 @@ def get_user_permissions_detail(user_id):
         log.error(f"Error in get_user_permissions_detail: {e}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
-@app.route('/api/rbac/users/<int:user_id>/permissions', methods=['POST'])
+@app.route('/api/rbac/users/<int:user_id>/permissions', methods=['POST', 'PUT'])
 @login_required
+@requires_permission('page_rbac_management')
 def update_user_permission(user_id):
     """Update user permission - FIXED VERSION"""
     try:
