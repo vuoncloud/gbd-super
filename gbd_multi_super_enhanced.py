@@ -1229,49 +1229,170 @@ def get_rbac_user_detail(user_id):
 @app.route('/api/rbac/users/<int:user_id>/permissions', methods=['GET'])
 @login_required
 def get_user_permissions_detail(user_id):
-    """Get user permissions with source information"""
-    # Mock permissions data
-    permissions = [
-        {
-            "key": "page_dashboard",
-            "description": "Access to dashboard page",
-            "category": "page",
-            "source": "inherited"
-        },
-        {
-            "key": "page_device_list", 
-            "description": "Access to device list page",
-            "category": "page",
-            "source": "allow"
-        },
-        {
-            "key": "page_tester",
-            "description": "Access to device tester",
-            "category": "page", 
-            "source": "allow"
-        },
-        {
-            "key": "permission_admin_only",
-            "description": "Administrative access only",
-            "category": "admin",
-            "source": "inherited"
-        }
-    ]
-    
-    return jsonify(permissions)
+    """Get user permissions with source information - FIXED VERSION"""
+    try:
+        log.info(f"Getting permissions for user ID: {user_id}")
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # First, check if user exists and get their role
+                cursor.execute("""
+                    SELECT u.id, u.email, u.name, pu.role_name 
+                    FROM users u
+                    LEFT JOIN project_users pu ON u.id = pu.user_id AND pu.project_id = 1
+                    WHERE u.id = %s
+                """, (user_id,))
+                
+                user = cursor.fetchone()
+                if not user:
+                    return jsonify({"error": f"User with ID {user_id} not found"}), 404
+                
+                user_role = user['role_name'] or 'user'  # Default role if none assigned
+                
+                # Get all available permissions
+                cursor.execute("""
+                    SELECT permission_key, description, category
+                    FROM permissions
+                    WHERE deleted_at IS NULL
+                    ORDER BY category, permission_key
+                """)
+                all_permissions = cursor.fetchall()
+                
+                # Get user-specific permission overrides
+                cursor.execute("""
+                    SELECT permission_key, permission_type
+                    FROM user_permissions
+                    WHERE user_id = %s AND deleted_at IS NULL
+                """, (user_id,))
+                user_overrides = {row['permission_key']: row['permission_type'] for row in cursor.fetchall()}
+                
+                # Get role-based permissions
+                cursor.execute("""
+                    SELECT permission_key, permission_type
+                    FROM role_permissions
+                    WHERE LOWER(role_name) = LOWER(%s) AND deleted_at IS NULL
+                """, (user_role,))
+                role_permissions = {row['permission_key']: row['permission_type'] for row in cursor.fetchall()}
+                
+                # Build the permissions list with source information
+                permissions = []
+                for perm in all_permissions:
+                    permission_key = perm['permission_key']
+                    
+                    # Determine the source and type
+                    if permission_key in user_overrides:
+                        source = user_overrides[permission_key]
+                        source_type = "user_override"
+                    elif permission_key in role_permissions:
+                        source = role_permissions[permission_key]
+                        source_type = "role_inherited"
+                    else:
+                        source = "deny"  # Default deny if not explicitly allowed
+                        source_type = "default"
+                    
+                    permissions.append({
+                        "key": permission_key,
+                        "description": perm['description'] or f"Permission: {permission_key}",
+                        "category": perm['category'] or "general",
+                        "source": source,
+                        "source_type": source_type
+                    })
+                
+                log.info(f"Retrieved {len(permissions)} permissions for user {user['email']} (ID: {user_id})")
+                
+                return jsonify(permissions)
+                
+        except Exception as db_error:
+            log.error(f"Database error getting user permissions: {db_error}")
+            return jsonify({"error": f"Database error: {str(db_error)}"}), 500
+        finally:
+            conn.close()
+            
+    except Exception as e:
+        log.error(f"Error in get_user_permissions_detail: {e}")
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route('/api/rbac/users/<int:user_id>/permissions', methods=['POST'])
 @login_required
 def update_user_permission(user_id):
-    """Update user permission"""
-    data = request.get_json()
-    permission_key = data.get('permission_key')
-    permission_type = data.get('type')
-    
-    log.info(f"Updating permission {permission_key} for user {user_id} to {permission_type}")
-    
-    # Simulate permission update
-    return jsonify({"success": True, "message": "Permission updated successfully"})
+    """Update user permission - FIXED VERSION"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+        
+        permission_key = data.get('permission_key')
+        permission_type = data.get('type')
+        
+        # Validate input data
+        if not permission_key or not permission_key.strip():
+            return jsonify({"error": "Permission key is required"}), 400
+        
+        if permission_type not in ['allow', 'deny']:
+            return jsonify({"error": "Permission type must be 'allow' or 'deny'"}), 400
+        
+        permission_key = permission_key.strip()
+        
+        log.info(f"Updating permission {permission_key} for user {user_id} to {permission_type}")
+        log.info(f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC, Updated by: {getattr(current_user, 'email', 'unknown')}")
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        try:
+            with conn.cursor() as cursor:
+                # First, check if user exists
+                cursor.execute("SELECT id, email FROM users WHERE id = %s", (user_id,))
+                user = cursor.fetchone()
+                
+                if not user:
+                    return jsonify({"error": f"User with ID {user_id} not found"}), 404
+                
+                user_email = user[1]
+                log.info(f"Updating permission for user: {user_email} (ID: {user_id})")
+                
+                # Update or insert user permission using ON CONFLICT
+                cursor.execute("""
+                    INSERT INTO user_permissions (user_id, permission_key, permission_type, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id, permission_key) 
+                    DO UPDATE SET 
+                        permission_type = EXCLUDED.permission_type,
+                        updated_at = EXCLUDED.updated_at,
+                        deleted_at = NULL
+                """, (user_id, permission_key, permission_type, datetime.utcnow(), datetime.utcnow()))
+                
+                # Commit the transaction
+                conn.commit()
+                
+                log.info(f"Successfully updated permission {permission_key} for user {user_email} (ID: {user_id}) to {permission_type}")
+                
+                return jsonify({
+                    "success": True,
+                    "message": f"Permission '{permission_key}' updated to '{permission_type}' for user {user_email}",
+                    "user_id": user_id,
+                    "user_email": user_email,
+                    "permission_key": permission_key,
+                    "permission_type": permission_type,
+                    "updated_by": getattr(current_user, 'email', 'unknown'),
+                    "updated_at": datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                })
+                
+        except Exception as db_error:
+            log.error(f"Database error updating user permission: {db_error}")
+            conn.rollback()
+            return jsonify({"error": f"Database error: {str(db_error)}"}), 500
+        finally:
+            conn.close()
+            
+    except Exception as e:
+        log.error(f"Error in update_user_permission: {e}")
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route('/api/rbac/roles', methods=['GET'])
 @login_required
