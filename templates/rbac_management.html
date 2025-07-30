@@ -1,0 +1,3233 @@
+{% extends "base_enhanced_rbac.html" %}
+
+{% block title %}RBAC Management{% endblock %}
+{% block page_title %}Role-Based Access Control{% endblock %}
+{% block page_description %}Enterprise security and user management system{% endblock %}
+
+{% block styles %}
+<style>
+.permission-item {
+    transition: all 0.2s ease;
+}
+
+.permission-item:hover {
+    background: #f8f9fa !important;
+    transform: translateX(2px);
+}
+
+.permission-checkbox:checked + label .permission-name {
+    color: #28a745 !important;
+    font-weight: 600;
+}
+
+.permission-checkbox:checked + label {
+    background: rgba(40, 167, 69, 0.05);
+    border-radius: 4px;
+    padding: 4px;
+}
+
+.category-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #f8f9fa !important;
+}
+
+.modal-overlay {
+    backdrop-filter: blur(2px);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(30px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.permission-summary {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin-bottom: 20px !important;
+}
+
+.btn-sm {
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.permission-category {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    transition: box-shadow 0.2s ease;
+}
+
+.permission-category:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* Progress bar style for selected count */
+.selected-count {
+    color: #007bff;
+    font-weight: bold;
+}
+</style>
+<style>
+    /* Clean, Simple Styles */
+    .rbac-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f8f9fa;
+        min-height: 100vh;
+    }
+
+    .page-header {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .page-title {
+        font-size: 24px;
+        font-weight: bold;
+        color: #333;
+        margin: 0;
+    }
+
+    .page-subtitle {
+        color: #666;
+        margin: 5px 0 0 0;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 10px;
+    }
+
+    .btn {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .btn-primary { background: #007bff; color: white; }
+    .btn-success { background: #28a745; color: white; }
+    .btn-secondary { background: #6c757d; color: white; }
+
+    .btn:hover {
+        opacity: 0.9;
+        transform: translateY(-1px);
+    }
+
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px; /* Reduced from 30px */
+}
+
+.stat-card {
+    background: white;
+    padding: 12px 16px; /* Reduced from 20px */
+    border-radius: 6px; /* Slightly smaller radius */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    text-align: center;
+    border-left: 3px solid; /* Reduced from 4px */
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    min-height: 65px; /* Set a fixed compact height */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.stat-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.stat-card.users { border-left-color: #007bff; }
+.stat-card.roles { border-left-color: #28a745; }
+.stat-card.permissions { border-left-color: #ffc107; }
+.stat-card.activities { border-left-color: #dc3545; }
+
+.stat-number {
+    font-size: 24px; /* Reduced from 36px */
+    font-weight: bold;
+    margin: 2px 0; /* Reduced from 10px */
+    line-height: 1;
+}
+
+.stat-label {
+    color: #666;
+    font-size: 12px; /* Reduced from 14px */
+    margin: 0;
+    line-height: 1.2;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .stats-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+    
+    .stat-card {
+        padding: 8px 12px;
+        min-height: 55px;
+    }
+    
+    .stat-number {
+        font-size: 20px;
+    }
+    
+    .stat-label {
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 480px) {
+    .stats-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+    
+    .stat-card {
+        padding: 6px 10px;
+        min-height: 50px;
+    }
+    
+    .stat-number {
+        font-size: 18px;
+    }
+    
+    .stat-label {
+        font-size: 10px;
+    }
+}
+    /* Management Sections */
+    .management-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+        gap: 20px;
+    }
+
+    .management-card {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+
+    .card-header {
+        background: #f8f9fa;
+        padding: 15px 20px;
+        border-bottom: 1px solid #dee2e6;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0;
+        color: #333;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .card-body {
+        padding: 20px;
+    }
+
+    /* Tables */
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+    }
+
+    .data-table th {
+        background: #f8f9fa;
+        padding: 12px;
+        text-align: left;
+        border-bottom: 2px solid #dee2e6;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .data-table td {
+        padding: 12px;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .data-table tr:hover {
+        background: #f8f9fa;
+    }
+
+    /* User Info */
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .user-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: #007bff;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+    }
+
+    .user-details h4 {
+        margin: 0;
+        font-size: 14px;
+        color: #333;
+    }
+
+    .user-details p {
+        margin: 0;
+        font-size: 12px;
+        color: #666;
+    }
+
+    /* Status Badges */
+    .badge {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+
+    .badge-admin { background: #dc3545; color: white; }
+    .badge-user { background: #28a745; color: white; }
+    .badge-active { background: #28a745; color: white; }
+
+    /* Action Links */
+    .action-links {
+        display: flex;
+        gap: 10px;
+    }
+
+    .action-link {
+        color: #007bff;
+        text-decoration: none;
+        font-size: 12px;
+        cursor: pointer;
+    }
+
+    .action-link:hover { text-decoration: underline; }
+    .action-link.danger { color: #dc3545; }
+
+    /* Forms */
+    .form-row {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 15px;
+        align-items: center;
+    }
+
+    .form-control {
+        padding: 8px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+
+    .form-control:focus {
+        border-color: #007bff;
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+    }
+
+    /* Loading States */
+    .loading {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+    }
+
+    .loading i {
+        font-size: 24px;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    /* Role Cards */
+    .roles-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 15px;
+    }
+
+    .role-card {
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 15px;
+        background: #f8f9fa;
+    }
+
+    .role-name {
+        font-weight: 600;
+        margin-bottom: 5px;
+        color: #333;
+    }
+
+    .role-desc {
+        font-size: 12px;
+        color: #666;
+        margin-bottom: 10px;
+    }
+
+    .role-actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .management-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .stats-row {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        
+        .page-header {
+            flex-direction: column;
+            gap: 15px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rbac-container">
+    <!-- Page Header -->
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">RBAC Management</h1>
+            <p class="page-subtitle">Manage users, roles, and permissions</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-secondary" onclick="refreshData()">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+            <button class="btn btn-primary" onclick="exportData()">
+                <i class="fas fa-download"></i> Export
+            </button>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+<div class="stats-row">
+    <div class="stat-card users">
+        <div class="stat-number" id="stat-users">4</div>
+        <div class="stat-label">Total Users</div>
+    </div>
+    <div class="stat-card roles">
+        <div class="stat-number" id="stat-roles">3</div>
+        <div class="stat-label">Active Roles</div>
+    </div>
+    <div class="stat-card permissions">
+        <div class="stat-number" id="stat-permissions">18</div>
+        <div class="stat-label">Permissions</div>
+    </div>
+    <div class="stat-card activities">
+        <div class="stat-number" id="stat-activities">3</div>
+        <div class="stat-label">Recent Activities</div>
+    </div>
+</div>
+
+    <!-- Management Grid -->
+    <div class="management-grid">
+        
+        <!-- User Management -->
+        <div class="management-card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-users"></i>
+                    User Management
+                </h3>
+                <button class="btn btn-success btn-sm" onclick="createUser()">
+                    <i class="fas fa-plus"></i> Add User
+                </button>
+            </div>
+            <div class="card-body">
+                <!-- Search -->
+                <div class="form-row">
+                    <input type="text" class="form-control" placeholder="Search users..." id="user-search" onkeyup="searchUsers()">
+                    <select class="form-control" id="role-filter" onchange="filterUsers()">
+                        <option value="">All Roles</option>
+                        <option value="admin">Admin</option>
+                        <option value="user">User</option>
+                    </select>
+                </div>
+
+                <!-- Users Table -->
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Role</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-table">
+                        <tr>
+                            <td>
+                                <div class="user-info">
+                                    <div class="user-avatar">N</div>
+                                    <div class="user-details">
+                                        <h4>nishantng25</h4>
+                                        <p>nishantgoyal@ssplcms.com</p>
+                                    </div>
+                                </div>
+                            </td>
+                            <td><span class="badge badge-admin">Admin</span></td>
+                            <td><span class="badge badge-active">Active</span></td>
+                            <td>
+                                <div class="action-links">
+                                    <a class="action-link" onclick="viewUser(1)">View</a>
+                                    <a class="action-link" onclick="editUser(1)">Edit</a>
+                                    <a class="action-link danger" onclick="deleteUser(1)">Delete</a>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Role Management -->
+        <div class="management-card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-shield-alt"></i>
+                    Role Management
+                </h3>
+                <button class="btn btn-success btn-sm" onclick="createRole()">
+                    <i class="fas fa-plus"></i> Add Role
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="roles-grid" id="roles-grid">
+                    <div class="role-card">
+                        <div class="role-name">Super Admin</div>
+                        <div class="role-desc">Full system access with all permissions</div>
+                        <div class="role-actions">
+                            <a class="action-link" onclick="editRole('Super Admin')">Edit</a>
+                            <a class="action-link" onclick="managePermissions('Super Admin')">Permissions</a>
+                        </div>
+                    </div>
+                    <div class="role-card">
+                        <div class="role-name">Admin</div>
+                        <div class="role-desc">Administrative access to most features</div>
+                        <div class="role-actions">
+                            <a class="action-link" onclick="editRole('Admin')">Edit</a>
+                            <a class="action-link" onclick="managePermissions('Admin')">Permissions</a>
+                        </div>
+                    </div>
+                    <div class="role-card">
+                        <div class="role-name">User</div>
+                        <div class="role-desc">Basic user access to assigned features</div>
+                        <div class="role-actions">
+                            <a class="action-link" onclick="editRole('User')">Edit</a>
+                            <a class="action-link" onclick="managePermissions('User')">Permissions</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Permission Discovery -->
+        <div class="management-card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-search"></i>
+                    Permission Discovery
+                </h3>
+                <button class="btn btn-primary btn-sm" onclick="discoverPermissions()">
+                    <i class="fas fa-sync"></i> Scan
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="permissions-list">
+                    <div style="margin-bottom: 15px;">
+                        <strong>Page Permissions (4)</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px;">
+                            <li>page_dashboard</li>
+                            <li>page_device_list</li>
+                            <li>page_tester</li>
+                            <li>page_rbac_management</li>
+                        </ul>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <strong>User Permissions (3)</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px;">
+                            <li>users.create</li>
+                            <li>users.edit</li>
+                            <li>users.delete</li>
+                        </ul>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <strong>Admin Permissions (2)</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px;">
+                            <li>admin.access</li>
+                            <li>system.configure</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Audit Logs -->
+        <div class="management-card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-clipboard-list"></i>
+                    Recent Activities
+                </h3>
+                <button class="btn btn-secondary btn-sm" onclick="viewAllLogs()">
+                    <i class="fas fa-eye"></i> View All
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="audit-logs">
+                    <div style="border-left: 3px solid #28a745; padding-left: 10px; margin-bottom: 10px;">
+                        <strong>User Login</strong><br>
+                        <small>nishantng25 logged in successfully</small><br>
+                        <small style="color: #666;">2025-07-29 16:52:40</small>
+                    </div>
+                    <div style="border-left: 3px solid #007bff; padding-left: 10px; margin-bottom: 10px;">
+                        <strong>Permission Discovery</strong><br>
+                        <small>Discovered 12 permissions automatically</small><br>
+                        <small style="color: #666;">2025-07-29 16:50:15</small>
+                    </div>
+                    <div style="border-left: 3px solid #ffc107; padding-left: 10px; margin-bottom: 10px;">
+                        <strong>Role Assignment</strong><br>
+                        <small>Admin role assigned to user</small><br>
+                        <small style="color: #666;">2025-07-29 16:45:30</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Simple Toast for Messages -->
+<div id="toast" style="position: fixed; top: 20px; right: 20px; background: #28a745; color: white; padding: 15px 20px; border-radius: 4px; z-index: 1000; display: none;">
+    <span id="toast-message"></span>
+    <button onclick="hideToast()" style="background: none; border: none; color: white; margin-left: 10px; cursor: pointer;">×</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+// Add this enhanced JavaScript to your rbac_management_SIMPLE.html template
+
+// Replace the existing script section with this enhanced version:
+
+<script>
+// Enhanced RBAC Management System - Full Implementation
+console.log('[RBAC] Enhanced RBAC Management System v1.0.0');
+console.log('[RBAC] Current User: nishantng25');
+console.log('[RBAC] Current Time: 2025-07-29 16:57:50 UTC');
+
+// Global state management
+const RBACSystem = {
+    users: [],
+    roles: [],
+    permissions: [],
+    auditLogs: [],
+    stats: {},
+    loading: {
+        users: false,
+        roles: false,
+        permissions: false,
+        audit: false
+    },
+    filters: {
+        userSearch: '',
+        roleFilter: ''
+    }
+};
+
+// ================================
+// INITIALIZATION
+// ================================
+document.addEventListener('DOMContentLoaded', async function() {
+    console.log('[RBAC] Initializing enhanced system...');
+    
+    try {
+        await loadAllData();
+        setupEventListeners();
+        setupAutoRefresh();
+        
+        console.log('[RBAC] System initialized successfully');
+        showToast('RBAC Management System loaded successfully', 'success');
+    } catch (error) {
+        console.error('[RBAC] Initialization error:', error);
+        showToast('Failed to initialize system', 'error');
+    }
+});
+
+function setupEventListeners() {
+    // Search functionality
+    const userSearch = document.getElementById('user-search');
+    if (userSearch) {
+        userSearch.addEventListener('input', debounce(handleUserSearch, 300));
+    }
+    
+    // Role filter
+    const roleFilter = document.getElementById('role-filter');
+    if (roleFilter) {
+        roleFilter.addEventListener('change', handleRoleFilter);
+    }
+    
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.key === 'r') {
+            e.preventDefault();
+            refreshData();
+        }
+        if (e.ctrlKey && e.key === 'e') {
+            e.preventDefault();
+            exportData();
+        }
+    });
+}
+
+function setupAutoRefresh() {
+    // Auto-refresh stats every 30 seconds
+    setInterval(async () => {
+        await loadStats();
+    }, 30000);
+    
+    // Auto-refresh audit logs every 2 minutes
+    setInterval(async () => {
+        await loadAuditLogs();
+    }, 120000);
+}
+
+// ================================
+// DATA LOADING FUNCTIONS
+// ================================
+async function loadAllData() {
+    showToast('Loading system data...', 'info');
+    
+    try {
+        await Promise.all([
+            loadStats(),
+            loadUsers(),
+            loadRoles(),
+            loadPermissions(),
+            loadAuditLogs()
+        ]);
+        
+        console.log('[RBAC] All data loaded successfully');
+    } catch (error) {
+        console.error('[RBAC] Error loading data:', error);
+        throw error;
+    }
+}
+
+async function loadStats() {
+    try {
+        const response = await fetch('/api/rbac/stats');
+        if (response.ok) {
+            RBACSystem.stats = await response.json();
+            updateStatsDisplay();
+        } else {
+            throw new Error('Failed to load stats');
+        }
+    } catch (error) {
+        console.error('[RBAC] Error loading stats:', error);
+        // Use fallback stats
+        RBACSystem.stats = {
+            users: 1,
+            roles: 4,
+            permissions: 12,
+            activities: 3
+        };
+        updateStatsDisplay();
+    }
+}
+
+async function loadUsers() {
+    setLoading('users', true);
+    
+    try {
+        const response = await fetch('/api/rbac/users');
+        if (response.ok) {
+            RBACSystem.users = await response.json();
+            renderUsersTable();
+        } else {
+            throw new Error('Failed to load users');
+        }
+    } catch (error) {
+        console.error('[RBAC] Error loading users:', error);
+        showToast('Failed to load users', 'error');
+        // Use fallback data
+        RBACSystem.users = [{
+            id: 1,
+            name: 'nishantng25',
+            email: 'nishantgoyal@ssplcms.com',
+            role: 'admin',
+            status: 'active',
+            created_at: '2025-07-29T16:57:50Z'
+        }];
+        renderUsersTable();
+    } finally {
+        setLoading('users', false);
+    }
+}
+
+async function loadRoles() {
+    setLoading('roles', true);
+    
+    try {
+        const response = await fetch('/api/rbac/roles');
+        if (response.ok) {
+            RBACSystem.roles = await response.json();
+            renderRolesGrid();
+            populateRoleFilter();
+        } else {
+            throw new Error('Failed to load roles');
+        }
+    } catch (error) {
+        console.error('[RBAC] Error loading roles:', error);
+        // Use fallback data
+        RBACSystem.roles = [
+            { name: 'Super Admin', description: 'Full system access', permission_count: 20 },
+            { name: 'Admin', description: 'Administrative access', permission_count: 15 },
+            { name: 'User', description: 'Basic access', permission_count: 5 }
+        ];
+        renderRolesGrid();
+        populateRoleFilter();
+    } finally {
+        setLoading('roles', false);
+    }
+}
+
+async function loadPermissions() {
+    setLoading('permissions', true);
+    
+    try {
+        const response = await fetch('/api/rbac/permissions');
+        if (response.ok) {
+            RBACSystem.permissions = await response.json();
+            renderPermissionsList();
+        } else {
+            throw new Error('Failed to load permissions');
+        }
+    } catch (error) {
+        console.error('[RBAC] Error loading permissions:', error);
+        // Use fallback data
+        RBACSystem.permissions = [
+            { key: 'page_dashboard', display_name: 'Dashboard Access', category: 'page' },
+            { key: 'page_device_list', display_name: 'Device List', category: 'page' },
+            { key: 'users.create', display_name: 'Create Users', category: 'user' },
+            { key: 'admin.access', display_name: 'Admin Access', category: 'admin' }
+        ];
+        renderPermissionsList();
+    } finally {
+        setLoading('permissions', false);
+    }
+}
+
+async function loadAuditLogs() {
+    setLoading('audit', true);
+    
+    try {
+        const response = await fetch('/api/rbac/audit-logs?limit=10');
+        if (response.ok) {
+            RBACSystem.auditLogs = await response.json();
+            renderAuditLogs();
+        } else {
+            throw new Error('Failed to load audit logs');
+        }
+    } catch (error) {
+        console.error('[RBAC] Error loading audit logs:', error);
+        // Use fallback data
+        RBACSystem.auditLogs = [
+            {
+                action: 'User Login',
+                details: 'nishantng25 logged in successfully',
+                changed_at: '2025-07-29T16:57:50Z',
+                changed_by_name: 'nishantng25'
+            }
+        ];
+        renderAuditLogs();
+    } finally {
+        setLoading('audit', false);
+    }
+}
+
+// ================================
+// RENDERING FUNCTIONS
+// ================================
+function updateStatsDisplay() {
+    const stats = RBACSystem.stats;
+    
+    const updates = {
+        'stat-users': stats.users || 1,
+        'stat-roles': stats.roles || 4,
+        'stat-permissions': stats.permissions || 12,
+        'stat-activities': stats.activities || 3
+    };
+    
+    Object.entries(updates).forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (element) {
+            // Animate the number change
+            animateNumber(element, parseInt(element.textContent) || 0, value);
+        }
+    });
+}
+
+function renderUsersTable() {
+    const tbody = document.getElementById('users-table');
+    if (!tbody) return;
+    
+    const filteredUsers = getFilteredUsers();
+    
+    if (filteredUsers.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="4" class="text-center" style="padding: 40px; color: #666;">
+                    <i class="fas fa-users" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>
+                    No users found
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    tbody.innerHTML = '';
+    
+    filteredUsers.forEach((user, index) => {
+        const row = document.createElement('tr');
+        row.style.animationDelay = `${index * 0.05}s`;
+        row.className = 'fade-in-row';
+        
+        row.innerHTML = `
+            <td>
+                <div class="user-info">
+                    <div class="user-avatar" style="background: ${getUserAvatarColor(user.role)}">
+                        ${user.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div class="user-details">
+                        <h4>${escapeHtml(user.name)}</h4>
+                        <p>${escapeHtml(user.email)}</p>
+                    </div>
+                </div>
+            </td>
+            <td>
+                <span class="badge badge-${user.role.toLowerCase()}">
+                    ${escapeHtml(user.role)}
+                </span>
+            </td>
+            <td>
+                <span class="badge badge-${user.status}">
+                    <i class="fas fa-circle" style="font-size: 0.5rem; margin-right: 4px;"></i>
+                    ${escapeHtml(user.status || 'Active')}
+                </span>
+            </td>
+            <td>
+                <div class="action-links">
+                    <a class="action-link" onclick="viewUser(${user.id})" title="View User">
+                        <i class="fas fa-eye"></i> View
+                    </a>
+                    <a class="action-link" onclick="editUser(${user.id})" title="Edit User">
+                        <i class="fas fa-edit"></i> Edit
+                    </a>
+                    ${user.id !== 1 ? `<a class="action-link danger" onclick="deleteUser(${user.id})" title="Delete User"><i class="fas fa-trash"></i> Delete</a>` : ''}
+                </div>
+            </td>
+        `;
+        
+        tbody.appendChild(row);
+    });
+}
+
+// Fix the role names in your frontend to match database
+function renderRolesGrid() {
+    const grid = document.getElementById('roles-grid');
+    if (!grid) return;
+    
+    grid.innerHTML = '';
+    
+    // Use these exact role names to match database
+    const standardRoles = [
+        { name: 'super_admin', display_name: 'Super Admin', description: 'Full system access with all permissions' },
+        { name: 'admin', display_name: 'Admin', description: 'Administrative access to most features' },
+        { name: 'manager', display_name: 'Manager', description: 'Management level access to user data' },
+        { name: 'user', display_name: 'User', description: 'Basic user access to assigned features' }
+    ];
+    
+    standardRoles.forEach((role, index) => {
+        const card = document.createElement('div');
+        card.className = 'role-card fade-in';
+        card.style.animationDelay = `${index * 0.1}s`;
+        
+        const isSystemRole = ['super_admin', 'admin'].includes(role.name);
+        
+        card.innerHTML = `
+            <div class="role-name">
+                ${escapeHtml(role.display_name)}
+                ${isSystemRole ? '<i class="fas fa-shield-alt" style="color: #ffc107; margin-left: 5px;" title="System Role"></i>' : ''}
+            </div>
+            <div class="role-desc">${escapeHtml(role.description)}</div>
+            <div style="font-size: 12px; color: #666; margin: 10px 0;">
+                <i class="fas fa-users"></i> ${role.user_count || 0} users • 
+                <i class="fas fa-key"></i> ${role.permission_count || 0} permissions
+            </div>
+            <div class="role-actions">
+                <a class="action-link" onclick="editRole('${escapeHtml(role.name)}')" title="Edit Role">
+                    <i class="fas fa-edit"></i> Edit
+                </a>
+                <a class="action-link" onclick="managePermissions('${escapeHtml(role.name)}')" title="Manage Permissions">
+                    <i class="fas fa-key"></i> Permissions
+                </a>
+                ${!isSystemRole ? `<a class="action-link danger" onclick="deleteRole('${escapeHtml(role.name)}')" title="Delete Role"><i class="fas fa-trash"></i> Delete</a>` : ''}
+            </div>
+        `;
+        
+        grid.appendChild(card);
+    });
+}
+
+console.log('[RBAC] Frontend updated to use correct role names');
+console.log('[RBAC] Time: 2025-07-30 04:06:27 UTC');
+console.log('[RBAC] User: nishantng25');
+
+function renderPermissionsList() {
+    const container = document.getElementById('permissions-list');
+    if (!container) return;
+    
+    // Group permissions by category
+    const categories = {};
+    RBACSystem.permissions.forEach(perm => {
+        const category = perm.category || 'general';
+        if (!categories[category]) {
+            categories[category] = [];
+        }
+        categories[category].push(perm);
+    });
+    
+    container.innerHTML = '';
+    
+    Object.entries(categories).forEach(([category, perms], index) => {
+        const categoryDiv = document.createElement('div');
+        categoryDiv.className = 'fade-in';
+        categoryDiv.style.animationDelay = `${index * 0.1}s`;
+        categoryDiv.style.marginBottom = '15px';
+        
+        categoryDiv.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <strong style="text-transform: capitalize;">
+                    <i class="fas fa-${getCategoryIcon(category)}"></i>
+                    ${category} Permissions (${perms.length})
+                </strong>
+                <button onclick="toggleCategory('${category}')" class="btn btn-sm" style="padding: 2px 8px; font-size: 12px;">
+                    <i class="fas fa-chevron-down" id="${category}-toggle"></i>
+                </button>
+            </div>
+            <div id="${category}-content" class="category-content">
+                <ul style="margin: 5px 0; padding-left: 20px; font-size: 13px;">
+                    ${perms.map(perm => `
+                        <li style="margin: 3px 0; display: flex; justify-content: space-between; align-items: center;">
+                            <span>
+                                <code style="background: #f1f1f1; padding: 1px 4px; border-radius: 2px; font-size: 11px;">${escapeHtml(perm.key)}</code>
+                                <span style="margin-left: 8px;">${escapeHtml(perm.display_name)}</span>
+                            </span>
+                            ${perm.auto_discovered ? '<span class="badge" style="background: #17a2b8; color: white; font-size: 10px;">Auto</span>' : ''}
+                        </li>
+                    `).join('')}
+                </ul>
+            </div>
+        `;
+        
+        container.appendChild(categoryDiv);
+    });
+}
+
+function renderAuditLogs() {
+    const container = document.getElementById('audit-logs');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    RBACSystem.auditLogs.slice(0, 5).forEach((log, index) => {
+        const logDiv = document.createElement('div');
+        logDiv.className = 'fade-in';
+        logDiv.style.animationDelay = `${index * 0.05}s`;
+        logDiv.style.cssText = `
+            border-left: 3px solid ${getActionColor(log.action)};
+            padding-left: 10px;
+            margin-bottom: 10px;
+            font-size: 13px;
+        `;
+        
+        logDiv.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div>
+                    <strong style="color: ${getActionColor(log.action)};">
+                        <i class="fas fa-${getActionIcon(log.action)}"></i>
+                        ${escapeHtml(log.action)}
+                    </strong><br>
+                    <small style="color: #333;">${escapeHtml(log.details)}</small><br>
+                    <small style="color: #666;">
+                        by ${escapeHtml(log.changed_by_name || 'System')} • ${formatTimeAgo(log.changed_at)}
+                    </small>
+                </div>
+            </div>
+        `;
+        
+        container.appendChild(logDiv);
+    });
+}
+
+// ================================
+// USER MANAGEMENT FUNCTIONS
+// ================================
+async function createUser() {
+    const userData = await showCreateUserModal();
+    if (!userData) return;
+    
+    try {
+        showToast('Creating user...', 'info');
+        
+        const response = await fetch('/api/rbac/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(userData)
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            showToast('User created successfully', 'success');
+            await loadUsers();
+            await loadStats();
+        } else {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to create user');
+        }
+    } catch (error) {
+        console.error('[RBAC] Error creating user:', error);
+        showToast(error.message || 'Failed to create user', 'error');
+    }
+}
+
+async function viewUser(userId) {
+    try {
+        showToast('Loading user details...', 'info');
+        
+        const response = await fetch(`/api/rbac/users/${userId}`);
+        if (response.ok) {
+            const user = await response.json();
+            showUserDetailModal(user);
+        } else {
+            throw new Error('Failed to load user details');
+        }
+    } catch (error) {
+        console.error('[RBAC] Error viewing user:', error);
+        showToast('Failed to load user details', 'error');
+    }
+}
+
+async function editUser(userId) {
+    const user = RBACSystem.users.find(u => u.id === userId);
+    if (!user) {
+        showToast('User not found', 'error');
+        return;
+    }
+    
+    const userData = await showEditUserModal(user);
+    if (!userData) return;
+    
+    try {
+        showToast('Updating user...', 'info');
+        
+        const response = await fetch(`/api/rbac/users/${userId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(userData)
+        });
+        
+        if (response.ok) {
+            showToast('User updated successfully', 'success');
+            await loadUsers();
+            await loadStats();
+        } else {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to update user');
+        }
+    } catch (error) {
+        console.error('[RBAC] Error updating user:', error);
+        showToast(error.message || 'Failed to update user', 'error');
+    }
+}
+
+async function deleteUser(userId) {
+    const user = RBACSystem.users.find(u => u.id === userId);
+    if (!user) {
+        showToast('User not found', 'error');
+        return;
+    }
+    
+    if (userId === 1) {
+        showToast('Cannot delete your own account', 'error');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete user "${user.name}"? This action cannot be undone.`)) {
+        return;
+    }
+    
+    try {
+        showToast('Deleting user...', 'info');
+        
+        const response = await fetch(`/api/rbac/users/${userId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            showToast('User deleted successfully', 'success');
+            await loadUsers();
+            await loadStats();
+        } else {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to delete user');
+        }
+    } catch (error) {
+        console.error('[RBAC] Error deleting user:', error);
+        showToast(error.message || 'Failed to delete user', 'error');
+    }
+}
+
+// ================================
+// ROLE MANAGEMENT FUNCTIONS
+// ================================
+async function createRole() {
+    const roleName = prompt('Enter role name:');
+    if (!roleName) return;
+    
+    const description = prompt('Enter role description:') || '';
+    
+    try {
+        showToast('Creating role...', 'info');
+        
+        const response = await fetch('/api/rbac/roles', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name: roleName,
+                description: description
+            })
+        });
+        
+        if (response.ok) {
+            showToast('Role created successfully', 'success');
+            await loadRoles();
+            await loadStats();
+        } else {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to create role');
+        }
+    } catch (error) {
+        console.error('[RBAC] Error creating role:', error);
+        showToast(error.message || 'Failed to create role', 'error');
+    }
+}
+
+function editRole(roleName) {
+    showToast(`Edit role functionality for "${roleName}" would open here`, 'info');
+    console.log('[RBAC] Edit role:', roleName);
+}
+
+async function managePermissions(roleName) {
+    console.log(`[RBAC] Managing permissions for role: ${roleName}`);
+    console.log(`[RBAC] Current time: 2025-07-30 03:53:21 UTC`);
+    console.log(`[RBAC] Current user: nishantng25`);
+    
+    try {
+        showToast('Loading permissions...', 'info');
+        
+        // Get current role permissions first
+        let currentPermissions = [];
+        try {
+            const response = await fetch(`/api/rbac/roles/${encodeURIComponent(roleName)}/permissions`);
+            if (response.ok) {
+                currentPermissions = await response.json();
+                console.log(`[RBAC] Loaded ${currentPermissions.length} existing permissions for ${roleName}`);
+            } else {
+                console.warn(`[RBAC] Could not load existing permissions: ${response.status}`);
+                currentPermissions = [];
+            }
+        } catch (error) {
+            console.error('[RBAC] Error loading current permissions:', error);
+            currentPermissions = [];
+        }
+        
+        // Get all available permissions
+        let allPermissions = [];
+        try {
+            const permResponse = await fetch('/api/rbac/permissions');
+            if (permResponse.ok) {
+                allPermissions = await permResponse.json();
+                console.log(`[RBAC] Loaded ${allPermissions.length} total available permissions`);
+            } else {
+                console.warn('[RBAC] Could not load all permissions, using defaults');
+                allPermissions = getDefaultPermissions();
+            }
+        } catch (error) {
+            console.error('[RBAC] Error loading all permissions:', error);
+            allPermissions = getDefaultPermissions();
+        }
+        
+        // Show the enhanced permission modal
+        const updatedPermissions = await showEnhancedPermissionModal(roleName, currentPermissions, allPermissions);
+        if (!updatedPermissions) {
+            console.log('[RBAC] Permission management cancelled');
+            return;
+        }
+        
+        // Update permissions
+        showToast('Updating permissions...', 'info');
+        
+        const updateResponse = await fetch(`/api/rbac/roles/${encodeURIComponent(roleName)}/permissions`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ permissions: updatedPermissions })
+        });
+        
+        if (updateResponse.ok) {
+            const result = await updateResponse.json();
+            showToast(result.message || 'Permissions updated successfully', 'success');
+            await loadRoles(); // Refresh the roles display
+        } else {
+            const error = await updateResponse.json();
+            throw new Error(error.error || 'Failed to update permissions');
+        }
+        
+    } catch (error) {
+        console.error('[RBAC] Error managing permissions:', error);
+        showToast(error.message || 'Failed to manage permissions', 'error');
+    }
+}
+
+function showEnhancedPermissionModal(roleName, currentPermissions, allPermissions) {
+    return new Promise((resolve) => {
+        console.log(`[RBAC] Creating enhanced permission modal for ${roleName}`);
+        console.log(`[RBAC] Current permissions:`, currentPermissions);
+        console.log(`[RBAC] All permissions:`, allPermissions);
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            animation: fadeIn 0.3s ease;
+        `;
+        
+        // Create a Set of current permission keys for fast lookup
+        const currentPermissionKeys = new Set(
+            currentPermissions.map(p => p.permission_key || p.key || p)
+        );
+        
+        console.log(`[RBAC] Current permission keys:`, Array.from(currentPermissionKeys));
+        
+        // Group permissions by category
+        const categories = {};
+        allPermissions.forEach(perm => {
+            const category = perm.category || 'general';
+            if (!categories[category]) {
+                categories[category] = [];
+            }
+            categories[category].push(perm);
+        });
+        
+        // Create permission checkboxes grouped by category
+        let permissionHTML = '';
+        let totalSelected = 0;
+        
+        Object.entries(categories).forEach(([category, perms]) => {
+            const categorySelected = perms.filter(p => currentPermissionKeys.has(p.key)).length;
+            totalSelected += categorySelected;
+            
+            permissionHTML += `
+                <div class="permission-category" style="margin-bottom: 20px; border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden;">
+                    <div class="category-header" style="background: #f8f9fa; padding: 12px 15px; border-bottom: 1px solid #dee2e6;">
+                        <div style="display: flex; align-items: center; justify-content: between;">
+                            <h5 style="margin: 0; font-size: 14px; color: #333; text-transform: capitalize; flex: 1;">
+                                <i class="fas fa-${getCategoryIcon(category)}"></i>
+                                ${category} Permissions 
+                                <span class="category-count" style="color: #666; font-weight: normal;">
+                                    (<span class="selected-count">${categorySelected}</span>/${perms.length})
+                                </span>
+                            </h5>
+                            <div class="category-actions">
+                                <button type="button" onclick="selectCategoryPermissions('${category}', true)" 
+                                        class="btn btn-sm btn-outline-success" style="padding: 2px 8px; font-size: 11px; margin-right: 5px;">
+                                    <i class="fas fa-check"></i> All
+                                </button>
+                                <button type="button" onclick="selectCategoryPermissions('${category}', false)" 
+                                        class="btn btn-sm btn-outline-secondary" style="padding: 2px 8px; font-size: 11px;">
+                                    <i class="fas fa-times"></i> None
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="category-permissions" style="padding: 15px; max-height: 250px; overflow-y: auto;">
+                        ${perms.map(perm => {
+                            const isChecked = currentPermissionKeys.has(perm.key);
+                            const permId = `perm_${perm.key.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                            
+                            return `
+                                <div class="permission-item" style="margin-bottom: 12px; display: flex; align-items: flex-start; gap: 10px; padding: 8px; border-radius: 4px; ${isChecked ? 'background: #e8f5e8;' : ''} hover:background: #f8f9fa;">
+                                    <input type="checkbox" 
+                                           id="${permId}" 
+                                           name="permissions" 
+                                           value="${escapeHtml(perm.key)}" 
+                                           ${isChecked ? 'checked' : ''} 
+                                           data-category="${category}"
+                                           class="permission-checkbox"
+                                           style="margin-top: 3px; transform: scale(1.2);">
+                                    <label for="${permId}" style="flex: 1; cursor: pointer;">
+                                        <div class="permission-name" style="font-weight: 500; font-size: 13px; color: #333; margin-bottom: 2px;">
+                                            ${escapeHtml(perm.display_name || perm.key)}
+                                            ${isChecked ? '<i class="fas fa-check-circle" style="color: #28a745; margin-left: 5px; font-size: 11px;"></i>' : ''}
+                                        </div>
+                                        <div class="permission-key" style="font-size: 11px; color: #666; font-family: monospace; margin-bottom: 2px;">
+                                            ${escapeHtml(perm.key)}
+                                        </div>
+                                        ${perm.description ? `<div class="permission-desc" style="font-size: 11px; color: #888; line-height: 1.3;">${escapeHtml(perm.description)}</div>` : ''}
+                                    </label>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        });
+        
+        modal.innerHTML = `
+            <div class="modal-content" style="
+                background: white;
+                border-radius: 12px;
+                padding: 0;
+                width: 95%;
+                max-width: 800px;
+                max-height: 90vh;
+                display: flex;
+                flex-direction: column;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                animation: slideUp 0.3s ease;
+            ">
+                <div class="modal-header" style="padding: 20px; border-bottom: 1px solid #dee2e6; flex-shrink: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px 12px 0 0;">
+                    <h3 style="margin: 0; font-size: 18px; display: flex; align-items: center;">
+                        <i class="fas fa-key" style="margin-right: 10px;"></i>
+                        Manage Permissions: ${escapeHtml(roleName)}
+                    </h3>
+                    <p style="margin: 8px 0 0 0; opacity: 0.9; font-size: 14px;">
+                        Select the permissions this role should have access to
+                    </p>
+                </div>
+                
+                <div class="modal-body" style="flex: 1; overflow-y: auto; padding: 20px;">
+                    <div class="permission-summary" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <div style="font-weight: 600; color: #333;">
+                                <i class="fas fa-info-circle" style="color: #007bff; margin-right: 5px;"></i>
+                                Permission Summary
+                            </div>
+                            <div style="font-size: 12px; color: #666;">
+                                <span id="selected-count">${totalSelected}</span> of ${allPermissions.length} permissions selected
+                            </div>
+                        </div>
+                        <div class="summary-actions" style="display: flex; gap: 10px;">
+                            <button type="button" onclick="selectAllPermissions(true)" class="btn btn-success btn-sm">
+                                <i class="fas fa-check-double"></i> Select All (${allPermissions.length})
+                            </button>
+                            <button type="button" onclick="selectAllPermissions(false)" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-times"></i> Deselect All
+                            </button>
+                            <button type="button" onclick="resetToOriginal()" class="btn btn-warning btn-sm">
+                                <i class="fas fa-undo"></i> Reset to Original
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <form id="permissions-form">
+                        ${permissionHTML}
+                    </form>
+                </div>
+                
+                <div class="modal-footer" style="padding: 15px 20px; border-top: 1px solid #dee2e6; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; border-radius: 0 0 12px 12px;">
+                    <div style="font-size: 12px; color: #666;">
+                        <i class="fas fa-clock"></i> Last updated: 2025-07-30 03:53:21 UTC by nishantng25
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" class="btn btn-secondary modal-cancel">
+                            <i class="fas fa-times"></i> Cancel
+                        </button>
+                        <button type="button" class="btn btn-primary modal-submit">
+                            <i class="fas fa-save"></i> Update Permissions
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Store original permissions for reset function
+        const originalPermissions = Array.from(currentPermissionKeys);
+        
+        // Enhanced functions for permission management
+        function updateSelectedCount() {
+            const checkedBoxes = modal.querySelectorAll('input[name="permissions"]:checked');
+            const countElement = modal.querySelector('#selected-count');
+            if (countElement) {
+                countElement.textContent = checkedBoxes.length;
+            }
+            
+            // Update category counts
+            Object.keys(categories).forEach(category => {
+                const categoryChecked = modal.querySelectorAll(`input[data-category="${category}"]:checked`).length;
+                const categoryCountElement = modal.querySelector(`.permission-category:has([data-category="${category}"]) .selected-count`);
+                if (categoryCountElement) {
+                    categoryCountElement.textContent = categoryChecked;
+                }
+            });
+        }
+        
+        // Add event listeners to all checkboxes
+        modal.querySelectorAll('input[name="permissions"]').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                updateSelectedCount();
+                
+                // Add visual feedback
+                const parentItem = this.closest('.permission-item');
+                if (this.checked) {
+                    parentItem.style.background = '#e8f5e8';
+                    parentItem.style.borderLeft = '3px solid #28a745';
+                } else {
+                    parentItem.style.background = '';
+                    parentItem.style.borderLeft = '';
+                }
+            });
+        });
+        
+        // Global functions for this modal
+        window.selectAllPermissions = (select) => {
+            modal.querySelectorAll('input[name="permissions"]').forEach(checkbox => {
+                checkbox.checked = select;
+                checkbox.dispatchEvent(new Event('change'));
+            });
+        };
+        
+        window.selectCategoryPermissions = (category, select) => {
+            modal.querySelectorAll(`input[data-category="${category}"]`).forEach(checkbox => {
+                checkbox.checked = select;
+                checkbox.dispatchEvent(new Event('change'));
+            });
+        };
+        
+        window.resetToOriginal = () => {
+            modal.querySelectorAll('input[name="permissions"]').forEach(checkbox => {
+                checkbox.checked = originalPermissions.includes(checkbox.value);
+                checkbox.dispatchEvent(new Event('change'));
+            });
+        };
+        
+        // Handle submit
+        modal.querySelector('.modal-submit').onclick = () => {
+            const checkedBoxes = modal.querySelectorAll('input[name="permissions"]:checked');
+            const selectedPermissions = Array.from(checkedBoxes).map(checkbox => checkbox.value);
+            
+            console.log(`[RBAC] Submitting ${selectedPermissions.length} permissions for ${roleName}`);
+            console.log(`[RBAC] Selected permissions:`, selectedPermissions);
+            
+            modal.remove();
+            
+            // Clean up global functions
+            delete window.selectAllPermissions;
+            delete window.selectCategoryPermissions;
+            delete window.resetToOriginal;
+            
+            resolve(selectedPermissions);
+        };
+        
+        // Handle cancel
+        modal.querySelector('.modal-cancel').onclick = () => {
+            modal.remove();
+            
+            // Clean up global functions
+            delete window.selectAllPermissions;
+            delete window.selectCategoryPermissions;
+            delete window.resetToOriginal;
+            
+            resolve(null);
+        };
+        
+        // Close on background click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                
+                // Clean up global functions
+                delete window.selectAllPermissions;
+                delete window.selectCategoryPermissions;
+                delete window.resetToOriginal;
+                
+                resolve(null);
+            }
+        });
+    });
+}
+
+// Helper function for default permissions
+function getDefaultPermissions() {
+    return [
+        {key: 'admin.access', display_name: 'Admin Access', category: 'admin', description: 'Full administrative access'},
+        {key: 'page_rbac_management', display_name: 'RBAC Management', category: 'page', description: 'Access RBAC management page'},
+        {key: 'page_dashboard', display_name: 'Dashboard', category: 'page', description: 'Access dashboard page'},
+        {key: 'page_device_list', display_name: 'Device List', category: 'page', description: 'Access device list page'},
+        {key: 'page_tester', display_name: 'Device Tester', category: 'page', description: 'Access device tester'},
+        {key: 'users.create', display_name: 'Create Users', category: 'user', description: 'Create new users'},
+        {key: 'users.edit', display_name: 'Edit Users', category: 'user', description: 'Edit existing users'},
+        {key: 'users.delete', display_name: 'Delete Users', category: 'user', description: 'Delete users'},
+        {key: 'roles.create', display_name: 'Create Roles', category: 'role', description: 'Create new roles'},
+        {key: 'roles.edit', display_name: 'Edit Roles', category: 'role', description: 'Edit existing roles'},
+        {key: 'devices.control', display_name: 'Control Devices', category: 'device', description: 'Control device operations'}
+    ];
+}
+
+// Helper function for category icons
+function getCategoryIcon(category) {
+    const icons = {
+        'admin': 'crown',
+        'page': 'file-alt',
+        'user': 'users',
+        'role': 'shield-alt',
+        'device': 'microchip',
+        'project': 'project-diagram',
+        'system': 'cogs',
+        'audit': 'history',
+        'general': 'circle'
+    };
+    return icons[category] || 'circle';
+}
+
+console.log('[RBAC] Enhanced permission management loaded');
+console.log('[RBAC] Current time: 2025-07-30 03:53:21 UTC');
+console.log('[RBAC] Current user: nishantng25');
+// ================================
+// PERMISSION DISCOVERY
+// ================================
+async function discoverPermissions() {
+    try {
+        showToast('Scanning for permissions...', 'info');
+        
+        const response = await fetch('/api/rbac/discover-permissions', {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            showToast(result.message, 'success');
+            await loadPermissions();
+            await loadStats();
+        } else {
+            const error = await response.json();
+            throw new Error(error.error || 'Permission discovery failed');
+        }
+    } catch (error) {
+        console.error('[RBAC] Error discovering permissions:', error);
+        showToast(error.message || 'Permission discovery failed', 'error');
+    }
+}
+
+// ================================
+// UTILITY FUNCTIONS
+// ================================
+function getFilteredUsers() {
+    let filtered = [...RBACSystem.users];
+    
+    // Apply search filter
+    if (RBACSystem.filters.userSearch) {
+        const search = RBACSystem.filters.userSearch.toLowerCase();
+        filtered = filtered.filter(user =>
+            user.name.toLowerCase().includes(search) ||
+            user.email.toLowerCase().includes(search) ||
+            user.role.toLowerCase().includes(search)
+        );
+    }
+    
+    // Apply role filter
+    if (RBACSystem.filters.roleFilter) {
+        filtered = filtered.filter(user => user.role === RBACSystem.filters.roleFilter);
+    }
+    
+    return filtered;
+}
+
+function handleUserSearch() {
+    const searchInput = document.getElementById('user-search');
+    RBACSystem.filters.userSearch = searchInput.value;
+    renderUsersTable();
+}
+
+function handleRoleFilter() {
+    const roleFilter = document.getElementById('role-filter');
+    RBACSystem.filters.roleFilter = roleFilter.value;
+    renderUsersTable();
+}
+
+function populateRoleFilter() {
+    const roleFilter = document.getElementById('role-filter');
+    if (!roleFilter) return;
+    
+    // Preserve current selection
+    const currentValue = roleFilter.value;
+    
+    // Clear and repopulate
+    roleFilter.innerHTML = '<option value="">All Roles</option>';
+    
+    const roles = [...new Set(RBACSystem.users.map(user => user.role))];
+    roles.forEach(role => {
+        const option = document.createElement('option');
+        option.value = role;
+        option.textContent = role;
+        roleFilter.appendChild(option);
+    });
+    
+    // Restore selection
+    roleFilter.value = currentValue;
+}
+
+function setLoading(type, loading) {
+    RBACSystem.loading[type] = loading;
+    // You could show loading indicators here
+}
+
+function animateNumber(element, start, end) {
+    const duration = 500;
+    const startTime = Date.now();
+    
+    function update() {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        const current = Math.round(start + (end - start) * progress);
+        element.textContent = current;
+        
+        if (progress < 1) {
+            requestAnimationFrame(update);
+        }
+    }
+    
+    requestAnimationFrame(update);
+}
+
+function getUserAvatarColor(role) {
+    const colors = {
+        'super_admin': '#6f42c1',
+        'admin': '#dc3545',
+        'manager': '#28a745',
+        'user': '#007bff'
+    };
+    return colors[role.toLowerCase()] || '#007bff';
+}
+
+function getCategoryIcon(category) {
+    const icons = {
+        'page': 'file-alt',
+        'user': 'users',
+        'role': 'shield-alt',
+        'admin': 'crown',
+        'system': 'cogs',
+        'general': 'circle'
+    };
+    return icons[category] || 'circle';
+}
+
+function getActionColor(action) {
+    const colors = {
+        'User Login': '#28a745',
+        'User Logout': '#6c757d',
+        'Permission Discovery': '#007bff',
+        'User Created': '#28a745',
+        'User Updated': '#ffc107',
+        'User Deleted': '#dc3545',
+        'Role Created': '#28a745',
+        'Role Updated': '#ffc107',
+        'Role Deleted': '#dc3545'
+    };
+    return colors[action] || '#007bff';
+}
+
+function getActionIcon(action) {
+    const icons = {
+        'User Login': 'sign-in-alt',
+        'User Logout': 'sign-out-alt',
+        'Permission Discovery': 'search',
+        'User Created': 'user-plus',
+        'User Updated': 'user-edit',
+        'User Deleted': 'user-minus',
+        'Role Created': 'plus-circle',
+        'Role Updated': 'edit',
+        'Role Deleted': 'minus-circle'
+    };
+    return icons[action] || 'circle';
+}
+
+function toggleCategory(category) {
+    const content = document.getElementById(`${category}-content`);
+    const toggle = document.getElementById(`${category}-toggle`);
+    
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        toggle.className = 'fas fa-chevron-up';
+    } else {
+        content.style.display = 'none';
+        toggle.className = 'fas fa-chevron-down';
+    }
+}
+
+function formatTimeAgo(dateString) {
+    if (!dateString) return 'Never';
+    
+    try {
+        const date = new Date(dateString);
+        const now = new Date('2025-07-29T17:02:20Z'); // Current UTC time
+        const diffMs = now - date;
+        const diffSecs = Math.floor(diffMs / 1000);
+        const diffMins = Math.floor(diffSecs / 60);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+        
+        if (diffSecs < 60) return 'Just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays < 7) return `${diffDays}d ago`;
+        if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+        if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
+        return `${Math.floor(diffDays / 365)}y ago`;
+    } catch (e) {
+        return 'Invalid date';
+    }
+}
+
+function formatDate(dateString) {
+    if (!dateString) return 'Never';
+    
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'UTC'
+        });
+    } catch (e) {
+        return 'Invalid date';
+    }
+}
+
+function escapeHtml(text) {
+    if (typeof text !== 'string') return text;
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// ================================
+// MODAL FUNCTIONS
+// ================================
+function showCreateUserModal() {
+    return new Promise((resolve) => {
+        const modal = createUserModal('Create User', {}, false);
+        document.body.appendChild(modal);
+        
+        modal.querySelector('.modal-submit').onclick = () => {
+            const form = modal.querySelector('form');
+            const formData = new FormData(form);
+            
+            const userData = {
+                name: formData.get('name'),
+                email: formData.get('email'),
+                first_name: formData.get('first_name') || '',
+                last_name: formData.get('last_name') || '',
+                mobile: formData.get('mobile') || '',
+                role: formData.get('role'),
+                password: formData.get('password')
+            };
+            
+            // Validate
+            if (!userData.name || !userData.email || !userData.role || !userData.password) {
+                showToast('Please fill in all required fields', 'error');
+                return;
+            }
+            
+            if (userData.password.length < 8) {
+                showToast('Password must be at least 8 characters', 'error');
+                return;
+            }
+            
+            modal.remove();
+            resolve(userData);
+        };
+        
+        modal.querySelector('.modal-cancel').onclick = () => {
+            modal.remove();
+            resolve(null);
+        };
+    });
+}
+
+function showEditUserModal(user) {
+    return new Promise((resolve) => {
+        const modal = createUserModal('Edit User', user, true);
+        document.body.appendChild(modal);
+        
+        modal.querySelector('.modal-submit').onclick = () => {
+            const form = modal.querySelector('form');
+            const formData = new FormData(form);
+            
+            const userData = {
+                name: formData.get('name'),
+                email: formData.get('email'),
+                first_name: formData.get('first_name') || '',
+                last_name: formData.get('last_name') || '',
+                mobile: formData.get('mobile') || '',
+                role: formData.get('role')
+            };
+            
+            // Validate
+            if (!userData.name || !userData.email || !userData.role) {
+                showToast('Please fill in all required fields', 'error');
+                return;
+            }
+            
+            modal.remove();
+            resolve(userData);
+        };
+        
+        modal.querySelector('.modal-cancel').onclick = () => {
+            modal.remove();
+            resolve(null);
+        };
+    });
+}
+
+function createUserModal(title, userData = {}, isEdit = false) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        animation: fadeIn 0.3s ease;
+    `;
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="
+            background: white;
+            border-radius: 8px;
+            padding: 0;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            animation: slideUp 0.3s ease;
+        ">
+            <div style="padding: 20px; border-bottom: 1px solid #dee2e6;">
+                <h3 style="margin: 0; font-size: 18px; color: #333;">
+                    <i class="fas fa-user${isEdit ? '-edit' : '-plus'}"></i>
+                    ${title}
+                </h3>
+            </div>
+            
+            <form style="padding: 20px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Name *</label>
+                        <input type="text" name="name" value="${userData.name || ''}" class="form-control" required>
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Email *</label>
+                        <input type="email" name="email" value="${userData.email || ''}" class="form-control" required>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">First Name</label>
+                        <input type="text" name="first_name" value="${userData.first_name || ''}" class="form-control">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Last Name</label>
+                        <input type="text" name="last_name" value="${userData.last_name || ''}" class="form-control">
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Mobile</label>
+                        <input type="tel" name="mobile" value="${userData.mobile || ''}" class="form-control">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Role *</label>
+                        <select name="role" class="form-control" required>
+                            <option value="">Select Role</option>
+                            <option value="admin" ${userData.role === 'admin' ? 'selected' : ''}>Admin</option>
+                            <option value="manager" ${userData.role === 'manager' ? 'selected' : ''}>Manager</option>
+                            <option value="user" ${userData.role === 'user' ? 'selected' : ''}>User</option>
+                        </select>
+                    </div>
+                </div>
+                
+                ${!isEdit ? `
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Password *</label>
+                        <input type="password" name="password" class="form-control" required placeholder="Minimum 8 characters">
+                    </div>
+                ` : ''}
+            </form>
+            
+            <div style="padding: 15px 20px; border-top: 1px solid #dee2e6; display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                <button type="button" class="btn btn-primary modal-submit">
+                    <i class="fas fa-save"></i>
+                    ${isEdit ? 'Update' : 'Create'} User
+                </button>
+            </div>
+        </div>
+    `;
+    
+    return modal;
+}
+
+function showUserDetailModal(user) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        animation: fadeIn 0.3s ease;
+    `;
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="
+            background: white;
+            border-radius: 8px;
+            padding: 0;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            animation: slideUp 0.3s ease;
+        ">
+            <div style="padding: 20px; border-bottom: 1px solid #dee2e6;">
+                <h3 style="margin: 0; font-size: 18px; color: #333;">
+                    <i class="fas fa-user"></i>
+                    User Details: ${escapeHtml(user.name)}
+                </h3>
+            </div>
+            
+            <div style="padding: 20px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                    <div>
+                        <h4 style="margin: 0 0 15px 0; color: #333; border-bottom: 1px solid #dee2e6; padding-bottom: 5px;">
+                            Basic Information
+                        </h4>
+                        <div style="space-y: 10px;">
+                            <div style="margin-bottom: 10px;">
+                                <strong>Name:</strong> ${escapeHtml(user.name)}
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong>Email:</strong> ${escapeHtml(user.email)}
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong>Role:</strong> 
+                                <span class="badge badge-${user.role.toLowerCase()}">${escapeHtml(user.role)}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong>Status:</strong> 
+                                <span class="badge badge-active">Active</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong>Created:</strong> ${formatDate(user.created_at)}
+                            </div>
+                            ${user.last_login_at ? `
+                                <div style="margin-bottom: 10px;">
+                                    <strong>Last Login:</strong> ${formatDate(user.last_login_at)}
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h4 style="margin: 0 0 15px 0; color: #333; border-bottom: 1px solid #dee2e6; padding-bottom: 5px;">
+                            Permissions (${user.permissions ? user.permissions.length : 0})
+                        </h4>
+                        <div style="max-height: 300px; overflow-y: auto;">
+                            ${user.permissions && user.permissions.length > 0 ? 
+                                user.permissions.map(perm => `
+                                    <div style="margin-bottom: 8px; padding: 8px; background: #f8f9fa; border-radius: 4px; border-left: 3px solid #007bff;">
+                                        <div style="font-weight: 500; font-size: 13px;">${escapeHtml(perm.display_name)}</div>
+                                        <div style="font-size: 11px; color: #666; font-family: monospace;">${escapeHtml(perm.key)}</div>
+                                    </div>
+                                `).join('') : 
+                                '<div style="text-align: center; color: #666; padding: 20px;">No permissions assigned</div>'
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="padding: 15px 20px; border-top: 1px solid #dee2e6; display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-primary" onclick="editUser(${user.id}); this.closest('.modal-overlay').remove();">
+                    <i class="fas fa-edit"></i>
+                    Edit User
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove();">
+                    Close
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Close on background click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+}
+
+// Add this enhanced role management code to your existing JavaScript
+
+// ================================
+// ENHANCED ROLE MANAGEMENT FUNCTIONS
+// ================================
+
+async function editRole(roleName) {
+    try {
+        showToast('Loading role details...', 'info');
+        
+        // Get role details
+        const role = RBACSystem.roles.find(r => r.name === roleName);
+        if (!role) {
+            showToast('Role not found', 'error');
+            return;
+        }
+        
+        // Show role edit modal
+        const updatedRole = await showRoleEditModal(role);
+        if (!updatedRole) return;
+        
+        showToast('Updating role...', 'info');
+        
+        const response = await fetch(`/api/rbac/roles/${encodeURIComponent(roleName)}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(updatedRole)
+        });
+        
+        if (response.ok) {
+            showToast('Role updated successfully', 'success');
+            await loadRoles();
+            await loadStats();
+        } else {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to update role');
+        }
+    } catch (error) {
+        console.error('[RBAC] Error editing role:', error);
+        showToast(error.message || 'Failed to edit role', 'error');
+    }
+}
+
+// Add this debug and fix code to your RBAC JavaScript
+
+// ================================
+// PERMISSION SAVING FIX
+// ================================
+
+// Enhanced error handling and debugging
+async function managePermissions(roleName) {
+    console.log(`[RBAC] Starting permission management for role: ${roleName}`);
+    console.log(`[RBAC] Current time: 2025-07-30 03:22:57 UTC`);
+    console.log(`[RBAC] Current user: nishantng25`);
+    
+    try {
+        showToast('Loading permission management...', 'info');
+        
+        // Get current role permissions with better error handling
+        let rolePermissions = [];
+        
+        try {
+            const response = await fetch(`/api/rbac/roles/${encodeURIComponent(roleName)}/permissions`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
+            
+            console.log(`[RBAC] Permission fetch response status: ${response.status}`);
+            
+            if (response.ok) {
+                const contentType = response.headers.get('content-type');
+                console.log(`[RBAC] Response content type: ${contentType}`);
+                
+                if (contentType && contentType.includes('application/json')) {
+                    rolePermissions = await response.json();
+                    console.log(`[RBAC] Loaded ${rolePermissions.length} existing permissions`);
+                } else {
+                    console.warn('[RBAC] Response is not JSON, using empty permissions');
+                    const text = await response.text();
+                    console.log('[RBAC] Response text:', text.substring(0, 200));
+                    rolePermissions = [];
+                }
+            } else {
+                console.warn(`[RBAC] Failed to load existing permissions: ${response.status}`);
+                rolePermissions = [];
+            }
+        } catch (fetchError) {
+            console.error('[RBAC] Error fetching role permissions:', fetchError);
+            rolePermissions = [];
+        }
+        
+        // Show permission management modal
+        const updatedPermissions = await showPermissionManagementModal(roleName, rolePermissions);
+        if (!updatedPermissions) {
+            console.log('[RBAC] Permission management cancelled');
+            return;
+        }
+        
+        console.log(`[RBAC] Updating permissions for ${roleName}:`, updatedPermissions);
+        showToast('Updating permissions...', 'info');
+        
+        // Update permissions with enhanced error handling
+        const updateResponse = await fetch(`/api/rbac/roles/${encodeURIComponent(roleName)}/permissions`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({ 
+                permissions: updatedPermissions,
+                role_name: roleName,
+                updated_by: 'nishantng25',
+                updated_at: '2025-07-30 03:22:57'
+            })
+        });
+        
+        console.log(`[RBAC] Update response status: ${updateResponse.status}`);
+        
+        if (updateResponse.ok) {
+            const contentType = updateResponse.headers.get('content-type');
+            
+            if (contentType && contentType.includes('application/json')) {
+                const result = await updateResponse.json();
+                console.log('[RBAC] Permission update result:', result);
+                showToast('Permissions updated successfully', 'success');
+                
+                // Refresh the roles display
+                await loadRoles();
+                await loadStats();
+            } else {
+                // Handle non-JSON success response
+                console.log('[RBAC] Non-JSON success response');
+                showToast('Permissions updated successfully', 'success');
+                await loadRoles();
+                await loadStats();
+            }
+        } else {
+            // Handle error response
+            let errorMessage = 'Failed to update permissions';
+            
+            try {
+                const contentType = updateResponse.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    const error = await updateResponse.json();
+                    errorMessage = error.error || error.message || errorMessage;
+                } else {
+                    const text = await updateResponse.text();
+                    console.log('[RBAC] Error response text:', text.substring(0, 200));
+                    errorMessage = `Server error (${updateResponse.status})`;
+                }
+            } catch (parseError) {
+                console.error('[RBAC] Error parsing error response:', parseError);
+            }
+            
+            throw new Error(errorMessage);
+        }
+        
+    } catch (error) {
+        console.error('[RBAC] Error managing permissions:', error);
+        showToast(error.message || 'Failed to manage permissions', 'error');
+    }
+}
+
+// Enhanced permission management modal with better error handling
+function showPermissionManagementModal(roleName, currentPermissions) {
+    return new Promise((resolve) => {
+        console.log(`[RBAC] Creating permission modal for ${roleName}`);
+        console.log(`[RBAC] Current permissions:`, currentPermissions);
+        
+        // Ensure we have permissions array
+        if (!Array.isArray(currentPermissions)) {
+            console.warn('[RBAC] currentPermissions is not an array, converting...');
+            currentPermissions = [];
+        }
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            animation: fadeIn 0.3s ease;
+        `;
+        
+        // Group permissions by category with error handling
+        const categories = {};
+        
+        try {
+            RBACSystem.permissions.forEach(perm => {
+                const category = perm.category || 'general';
+                if (!categories[category]) {
+                    categories[category] = [];
+                }
+                categories[category].push(perm);
+            });
+        } catch (error) {
+            console.error('[RBAC] Error grouping permissions:', error);
+            // Fallback permissions
+            categories.general = [
+                { key: 'page_dashboard', display_name: 'Dashboard Access', category: 'page' },
+                { key: 'page_device_list', display_name: 'Device List', category: 'page' },
+                { key: 'users.create', display_name: 'Create Users', category: 'user' }
+            ];
+        }
+        
+        // Create permission checkboxes grouped by category
+        let permissionHTML = '';
+        Object.entries(categories).forEach(([category, perms]) => {
+            permissionHTML += `
+                <div style="margin-bottom: 20px; border: 1px solid #dee2e6; border-radius: 6px; overflow: hidden;">
+                    <div style="background: #f8f9fa; padding: 10px 15px; border-bottom: 1px solid #dee2e6;">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <h5 style="margin: 0; font-size: 14px; color: #333; text-transform: capitalize;">
+                                <i class="fas fa-${getCategoryIcon(category)}"></i>
+                                ${category} Permissions (${perms.length})
+                            </h5>
+                            <div>
+                                <button type="button" onclick="selectAllInCategory('${category}', true)" class="btn" style="padding: 2px 8px; font-size: 11px; margin-right: 5px;">All</button>
+                                <button type="button" onclick="selectAllInCategory('${category}', false)" class="btn" style="padding: 2px 8px; font-size: 11px;">None</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="padding: 15px; max-height: 200px; overflow-y: auto;">
+                        ${perms.map(perm => {
+                            // Check if permission is currently assigned
+                            const isChecked = currentPermissions.some(cp => 
+                                (cp.permission_key && cp.permission_key === perm.key) || 
+                                (typeof cp === 'string' && cp === perm.key)
+                            );
+                            
+                            return `
+                                <div style="margin-bottom: 10px; display: flex; align-items: flex-start; gap: 10px;">
+                                    <input type="checkbox" 
+                                           id="perm_${perm.key.replace(/[^a-zA-Z0-9]/g, '_')}" 
+                                           name="permissions" 
+                                           value="${perm.key}" 
+                                           ${isChecked ? 'checked' : ''} 
+                                           data-category="${category}"
+                                           style="margin-top: 2px;">
+                                    <label for="perm_${perm.key.replace(/[^a-zA-Z0-9]/g, '_')}" style="flex: 1; cursor: pointer;">
+                                        <div style="font-weight: 500; font-size: 13px; color: #333;">${escapeHtml(perm.display_name)}</div>
+                                        <div style="font-size: 11px; color: #666; font-family: monospace;">${escapeHtml(perm.key)}</div>
+                                        ${perm.description ? `<div style="font-size: 11px; color: #888; margin-top: 2px;">${escapeHtml(perm.description)}</div>` : ''}
+                                    </label>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        });
+        
+        modal.innerHTML = `
+            <div class="modal-content" style="
+                background: white;
+                border-radius: 8px;
+                padding: 0;
+                width: 95%;
+                max-width: 700px;
+                max-height: 90vh;
+                display: flex;
+                flex-direction: column;
+                animation: slideUp 0.3s ease;
+            ">
+                <div style="padding: 20px; border-bottom: 1px solid #dee2e6; flex-shrink: 0;">
+                    <h3 style="margin: 0; font-size: 18px; color: #333;">
+                        <i class="fas fa-key"></i>
+                        Manage Permissions: ${escapeHtml(roleName)}
+                    </h3>
+                    <p style="margin: 5px 0 0 0; color: #666; font-size: 14px;">
+                        Select the permissions this role should have access to
+                    </p>
+                </div>
+                
+                <div style="flex: 1; overflow-y: auto; padding: 20px;">
+                    <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
+                        <button type="button" onclick="selectAllPermissions(true)" class="btn btn-success btn-sm">
+                            <i class="fas fa-check-double"></i> Select All
+                        </button>
+                        <button type="button" onclick="selectAllPermissions(false)" class="btn btn-secondary btn-sm">
+                            <i class="fas fa-times"></i> Deselect All
+                        </button>
+                        <div style="margin-left: auto; font-size: 12px; color: #666;">
+                            <span id="selected-count">0</span> permissions selected
+                        </div>
+                    </div>
+                    
+                    <form id="permissions-form">
+                        ${permissionHTML}
+                    </form>
+                </div>
+                
+                <div style="padding: 15px 20px; border-top: 1px solid #dee2e6; flex-shrink: 0; display: flex; justify-content: flex-end; gap: 10px;">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                    <button type="button" class="btn btn-primary modal-submit">
+                        <i class="fas fa-save"></i>
+                        Update Permissions
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Update selected count function
+        function updateSelectedCount() {
+            try {
+                const checkedBoxes = modal.querySelectorAll('input[name="permissions"]:checked');
+                const countElement = modal.querySelector('#selected-count');
+                if (countElement) {
+                    countElement.textContent = checkedBoxes.length;
+                }
+            } catch (error) {
+                console.error('[RBAC] Error updating selected count:', error);
+            }
+        }
+        
+        // Add event listeners to checkboxes
+        modal.querySelectorAll('input[name="permissions"]').forEach(checkbox => {
+            checkbox.addEventListener('change', updateSelectedCount);
+        });
+        
+        // Initial count update
+        updateSelectedCount();
+        
+        // Global functions for this modal
+        window.selectAllPermissions = (select) => {
+            try {
+                modal.querySelectorAll('input[name="permissions"]').forEach(checkbox => {
+                    checkbox.checked = select;
+                });
+                updateSelectedCount();
+            } catch (error) {
+                console.error('[RBAC] Error in selectAllPermissions:', error);
+            }
+        };
+        
+        window.selectAllInCategory = (category, select) => {
+            try {
+                modal.querySelectorAll(`input[data-category="${category}"]`).forEach(checkbox => {
+                    checkbox.checked = select;
+                });
+                updateSelectedCount();
+            } catch (error) {
+                console.error('[RBAC] Error in selectAllInCategory:', error);
+            }
+        };
+        
+        // Handle submit
+        modal.querySelector('.modal-submit').onclick = () => {
+            try {
+                const checkedBoxes = modal.querySelectorAll('input[name="permissions"]:checked');
+                const selectedPermissions = Array.from(checkedBoxes).map(checkbox => checkbox.value);
+                
+                console.log(`[RBAC] Selected ${selectedPermissions.length} permissions:`, selectedPermissions);
+                
+                modal.remove();
+                
+                // Clean up global functions
+                delete window.selectAllPermissions;
+                delete window.selectAllInCategory;
+                
+                resolve(selectedPermissions);
+            } catch (error) {
+                console.error('[RBAC] Error in submit handler:', error);
+                showToast('Error processing permissions', 'error');
+            }
+        };
+        
+        // Handle cancel
+        modal.querySelector('.modal-cancel').onclick = () => {
+            modal.remove();
+            
+            // Clean up global functions
+            delete window.selectAllPermissions;
+            delete window.selectAllInCategory;
+            
+            resolve(null);
+        };
+        
+        // Close on background click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                
+                // Clean up global functions
+                delete window.selectAllPermissions;
+                delete window.selectAllInCategory;
+                
+                resolve(null);
+            }
+        });
+    });
+}
+// ================================
+// ROLE EDIT MODAL
+// ================================
+function showRoleEditModal(role) {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            animation: fadeIn 0.3s ease;
+        `;
+        
+        const isSystemRole = ['super admin', 'admin'].includes(role.name.toLowerCase());
+        
+        modal.innerHTML = `
+            <div class="modal-content" style="
+                background: white;
+                border-radius: 8px;
+                padding: 0;
+                width: 90%;
+                max-width: 500px;
+                max-height: 90vh;
+                overflow-y: auto;
+                animation: slideUp 0.3s ease;
+            ">
+                <div style="padding: 20px; border-bottom: 1px solid #dee2e6;">
+                    <h3 style="margin: 0; font-size: 18px; color: #333;">
+                        <i class="fas fa-shield-alt"></i>
+                        Edit Role: ${escapeHtml(role.name)}
+                        ${isSystemRole ? '<span class="badge" style="background: #ffc107; color: #212529; margin-left: 10px; font-size: 11px;">System Role</span>' : ''}
+                    </h3>
+                </div>
+                
+                <form style="padding: 20px;">
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Role Name</label>
+                        <input type="text" name="name" value="${escapeHtml(role.name)}" class="form-control" ${isSystemRole ? 'readonly' : ''}>
+                        ${isSystemRole ? '<small style="color: #666;">System roles cannot be renamed</small>' : ''}
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Description</label>
+                        <textarea name="description" class="form-control" rows="3" placeholder="Describe this role's purpose and responsibilities">${escapeHtml(role.description || '')}</textarea>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Role Statistics</label>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; border: 1px solid #dee2e6;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; text-align: center;">
+                                <div>
+                                    <div style="font-size: 24px; font-weight: bold; color: #007bff;">${role.user_count || 0}</div>
+                                    <div style="font-size: 12px; color: #666;">Users Assigned</div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 24px; font-weight: bold; color: #28a745;">${role.permission_count || 0}</div>
+                                    <div style="font-size: 12px; color: #666;">Permissions</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+                
+                <div style="padding: 15px 20px; border-top: 1px solid #dee2e6; display: flex; justify-content: flex-end; gap: 10px;">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                    <button type="button" class="btn btn-primary modal-submit">
+                        <i class="fas fa-save"></i>
+                        Update Role
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        modal.querySelector('.modal-submit').onclick = () => {
+            const form = modal.querySelector('form');
+            const formData = new FormData(form);
+            
+            const updatedRole = {
+                name: formData.get('name'),
+                description: formData.get('description')
+            };
+            
+            if (!updatedRole.name.trim()) {
+                showToast('Role name is required', 'error');
+                return;
+            }
+            
+            modal.remove();
+            resolve(updatedRole);
+        };
+        
+        modal.querySelector('.modal-cancel').onclick = () => {
+            modal.remove();
+            resolve(null);
+        };
+        
+        // Close on background click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                resolve(null);
+            }
+        });
+    });
+}
+
+// ================================
+// PERMISSION MANAGEMENT MODAL
+// ================================
+function showPermissionManagementModal(roleName, currentPermissions) {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            animation: fadeIn 0.3s ease;
+        `;
+        
+        // Group permissions by category
+        const categories = {};
+        RBACSystem.permissions.forEach(perm => {
+            const category = perm.category || 'general';
+            if (!categories[category]) {
+                categories[category] = [];
+            }
+            categories[category].push(perm);
+        });
+        
+        // Create permission checkboxes grouped by category
+        let permissionHTML = '';
+        Object.entries(categories).forEach(([category, perms]) => {
+            permissionHTML += `
+                <div style="margin-bottom: 20px; border: 1px solid #dee2e6; border-radius: 6px; overflow: hidden;">
+                    <div style="background: #f8f9fa; padding: 10px 15px; border-bottom: 1px solid #dee2e6;">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <h5 style="margin: 0; font-size: 14px; color: #333; text-transform: capitalize;">
+                                <i class="fas fa-${getCategoryIcon(category)}"></i>
+                                ${category} Permissions (${perms.length})
+                            </h5>
+                            <div>
+                                <button type="button" onclick="selectAllInCategory('${category}', true)" class="btn" style="padding: 2px 8px; font-size: 11px; margin-right: 5px;">All</button>
+                                <button type="button" onclick="selectAllInCategory('${category}', false)" class="btn" style="padding: 2px 8px; font-size: 11px;">None</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="padding: 15px; max-height: 200px; overflow-y: auto;">
+                        ${perms.map(perm => {
+                            const isChecked = currentPermissions.some(cp => cp.permission_key === perm.key);
+                            return `
+                                <div style="margin-bottom: 10px; display: flex; align-items: flex-start; gap: 10px;">
+                                    <input type="checkbox" id="perm_${perm.key}" name="permissions" value="${perm.key}" 
+                                           ${isChecked ? 'checked' : ''} 
+                                           data-category="${category}"
+                                           style="margin-top: 2px;">
+                                    <label for="perm_${perm.key}" style="flex: 1; cursor: pointer;">
+                                        <div style="font-weight: 500; font-size: 13px; color: #333;">${escapeHtml(perm.display_name)}</div>
+                                        <div style="font-size: 11px; color: #666; font-family: monospace;">${escapeHtml(perm.key)}</div>
+                                        ${perm.description ? `<div style="font-size: 11px; color: #888; margin-top: 2px;">${escapeHtml(perm.description)}</div>` : ''}
+                                    </label>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        });
+        
+        modal.innerHTML = `
+            <div class="modal-content" style="
+                background: white;
+                border-radius: 8px;
+                padding: 0;
+                width: 95%;
+                max-width: 700px;
+                max-height: 90vh;
+                display: flex;
+                flex-direction: column;
+                animation: slideUp 0.3s ease;
+            ">
+                <div style="padding: 20px; border-bottom: 1px solid #dee2e6; flex-shrink: 0;">
+                    <h3 style="margin: 0; font-size: 18px; color: #333;">
+                        <i class="fas fa-key"></i>
+                        Manage Permissions: ${escapeHtml(roleName)}
+                    </h3>
+                    <p style="margin: 5px 0 0 0; color: #666; font-size: 14px;">
+                        Select the permissions this role should have access to
+                    </p>
+                </div>
+                
+                <div style="flex: 1; overflow-y: auto; padding: 20px;">
+                    <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
+                        <button type="button" onclick="selectAllPermissions(true)" class="btn btn-success btn-sm">
+                            <i class="fas fa-check-double"></i> Select All
+                        </button>
+                        <button type="button" onclick="selectAllPermissions(false)" class="btn btn-secondary btn-sm">
+                            <i class="fas fa-times"></i> Deselect All
+                        </button>
+                        <div style="margin-left: auto; font-size: 12px; color: #666;">
+                            <span id="selected-count">0</span> permissions selected
+                        </div>
+                    </div>
+                    
+                    <form id="permissions-form">
+                        ${permissionHTML}
+                    </form>
+                </div>
+                
+                <div style="padding: 15px 20px; border-top: 1px solid #dee2e6; flex-shrink: 0; display: flex; justify-content: flex-end; gap: 10px;">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+                    <button type="button" class="btn btn-primary modal-submit">
+                        <i class="fas fa-save"></i>
+                        Update Permissions
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Update selected count
+        function updateSelectedCount() {
+            const checkedBoxes = modal.querySelectorAll('input[name="permissions"]:checked');
+            const countElement = modal.querySelector('#selected-count');
+            if (countElement) {
+                countElement.textContent = checkedBoxes.length;
+            }
+        }
+        
+        // Add event listeners to checkboxes
+        modal.querySelectorAll('input[name="permissions"]').forEach(checkbox => {
+            checkbox.addEventListener('change', updateSelectedCount);
+        });
+        
+        // Initial count update
+        updateSelectedCount();
+        
+        // Global functions for this modal
+        window.selectAllPermissions = (select) => {
+            modal.querySelectorAll('input[name="permissions"]').forEach(checkbox => {
+                checkbox.checked = select;
+            });
+            updateSelectedCount();
+        };
+        
+        window.selectAllInCategory = (category, select) => {
+            modal.querySelectorAll(`input[data-category="${category}"]`).forEach(checkbox => {
+                checkbox.checked = select;
+            });
+            updateSelectedCount();
+        };
+        
+        modal.querySelector('.modal-submit').onclick = () => {
+            const checkedBoxes = modal.querySelectorAll('input[name="permissions"]:checked');
+            const selectedPermissions = Array.from(checkedBoxes).map(checkbox => checkbox.value);
+            
+            modal.remove();
+            
+            // Clean up global functions
+            delete window.selectAllPermissions;
+            delete window.selectAllInCategory;
+            
+            resolve(selectedPermissions);
+        };
+        
+        modal.querySelector('.modal-cancel').onclick = () => {
+            modal.remove();
+            
+            // Clean up global functions
+            delete window.selectAllPermissions;
+            delete window.selectAllInCategory;
+            
+            resolve(null);
+        };
+        
+        // Close on background click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                
+                // Clean up global functions
+                delete window.selectAllPermissions;
+                delete window.selectAllInCategory;
+                
+                resolve(null);
+            }
+        });
+    });
+}
+
+
+// ================================
+// ENHANCED ACTION FUNCTIONS
+// ================================
+async function refreshData() {
+    showToast('Refreshing all data...', 'info');
+    
+    try {
+        await loadAllData();
+        showToast('Data refreshed successfully', 'success');
+        console.log(`[RBAC] Data refreshed at ${new Date().toISOString()} by nishantng25`);
+    } catch (error) {
+        console.error('[RBAC] Error refreshing data:', error);
+        showToast('Failed to refresh data', 'error');
+    }
+}
+
+async function exportData() {
+    showToast('Preparing export...', 'info');
+    
+    try {
+        const response = await fetch('/api/rbac/export');
+        if (response.ok) {
+            const exportData = await response.json();
+            
+            // Create and download JSON file
+            const jsonContent = JSON.stringify(exportData, null, 2);
+            const blob = new Blob([jsonContent], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `rbac_export_${new Date().toISOString().split('T')[0]}.json`;
+            link.style.display = 'none';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            URL.revokeObjectURL(url);
+            
+            showToast('RBAC data exported successfully', 'success');
+        } else {
+            throw new Error('Export failed');
+        }
+    } catch (error) {
+        console.error('[RBAC] Error exporting data:', error);
+        
+        // Fallback: export current state data
+        const fallbackData = {
+            export_info: {
+                timestamp: new Date().toISOString(),
+                exported_by: 'nishantng25',
+                version: '1.0.0',
+                note: 'Fallback export from frontend data'
+            },
+            users: RBACSystem.users,
+            roles: RBACSystem.roles,
+            permissions: RBACSystem.permissions,
+            audit_logs: RBACSystem.auditLogs,
+            stats: RBACSystem.stats
+        };
+        
+        const jsonContent = JSON.stringify(fallbackData, null, 2);
+        const blob = new Blob([jsonContent], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `rbac_export_fallback_${new Date().toISOString().split('T')[0]}.json`;
+        link.style.display = 'none';
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        URL.revokeObjectURL(url);
+        
+        showToast('RBAC data exported (fallback)', 'success');
+    }
+}
+
+function viewAllLogs() {
+    showToast('Opening full audit log viewer...', 'info');
+    
+    // Create full audit log modal
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        animation: fadeIn 0.3s ease;
+    `;
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="
+            background: white;
+            border-radius: 8px;
+            padding: 0;
+            width: 95%;
+            max-width: 1000px;
+            height: 80vh;
+            display: flex;
+            flex-direction: column;
+            animation: slideUp 0.3s ease;
+        ">
+            <div style="padding: 20px; border-bottom: 1px solid #dee2e6; flex-shrink: 0;">
+                <h3 style="margin: 0; font-size: 18px; color: #333;">
+                    <i class="fas fa-clipboard-list"></i>
+                    Complete Audit Log
+                </h3>
+            </div>
+            
+            <div style="flex: 1; overflow-y: auto; padding: 20px;">
+                ${RBACSystem.auditLogs.map((log, index) => `
+                    <div style="
+                        border-left: 3px solid ${getActionColor(log.action)};
+                        padding: 12px 15px;
+                        margin-bottom: 15px;
+                        background: #f8f9fa;
+                        border-radius: 0 4px 4px 0;
+                        animation: fadeIn 0.3s ease;
+                        animation-delay: ${index * 0.05}s;
+                    ">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600; color: ${getActionColor(log.action)}; margin-bottom: 5px;">
+                                    <i class="fas fa-${getActionIcon(log.action)}"></i>
+                                    ${escapeHtml(log.action)}
+                                </div>
+                                <div style="color: #333; margin-bottom: 5px; font-size: 14px;">
+                                    ${escapeHtml(log.details)}
+                                </div>
+                                <div style="color: #666; font-size: 12px;">
+                                    by ${escapeHtml(log.changed_by_name || 'System')} 
+                                    ${log.permission_key ? `• Permission: ${escapeHtml(log.permission_key)}` : ''}
+                                    ${log.ip_address ? `• IP: ${escapeHtml(log.ip_address)}` : ''}
+                                </div>
+                            </div>
+                            <div style="text-align: right; color: #666; font-size: 12px; margin-left: 15px;">
+                                <div>${formatDate(log.changed_at)}</div>
+                                <div>${formatTimeAgo(log.changed_at)}</div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            
+            <div style="padding: 15px 20px; border-top: 1px solid #dee2e6; flex-shrink: 0; display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="exportAuditLogs()">
+                    <i class="fas fa-download"></i>
+                    Export CSV
+                </button>
+                <button type="button" class="btn btn-primary" onclick="this.closest('.modal-overlay').remove();">
+                    Close
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Close on background click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+}
+
+function exportAuditLogs() {
+    try {
+        const csvContent = generateAuditCSV();
+        downloadCSV(csvContent, `audit_logs_${new Date().toISOString().split('T')[0]}.csv`);
+        showToast('Audit logs exported successfully', 'success');
+    } catch (error) {
+        console.error('[RBAC] Error exporting audit logs:', error);
+        showToast('Failed to export audit logs', 'error');
+    }
+}
+
+function generateAuditCSV() {
+    const headers = ['Timestamp', 'Action', 'User', 'Permission', 'Details', 'IP Address'];
+    const rows = RBACSystem.auditLogs.map(log => [
+        formatDate(log.changed_at) || '',
+        log.action || '',
+        log.changed_by_name || 'System',
+        log.permission_key || 'N/A',
+        (log.details || '').replace(/\n/g, ' ').replace(/"/g, '""'),
+        log.ip_address || 'N/A'
+    ]);
+    
+    return [headers, ...rows].map(row => 
+        row.map(field => `"${String(field)}"`).join(',')
+    ).join('\n');
+}
+
+function downloadCSV(content, filename) {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    URL.revokeObjectURL(url);
+}
+
+// ================================
+// CSS ANIMATIONS
+// ================================
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    
+    @keyframes slideUp {
+        from { opacity: 0; transform: translateY(30px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes fadeInRow {
+        from { opacity: 0; transform: translateX(-20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+    
+    .fade-in { animation: fadeIn 0.5s ease forwards; }
+    .fade-in-row { animation: fadeInRow 0.5s ease forwards; }
+    
+    .modal-overlay {
+        backdrop-filter: blur(4px);
+    }
+    
+    .action-link {
+        transition: all 0.2s ease;
+    }
+    
+    .action-link:hover {
+        transform: translateY(-1px);
+    }
+    
+    .role-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+`;
+document.head.appendChild(style);
+
+// ================================
+// SYSTEM INITIALIZATION LOG
+// ================================
+console.log('[RBAC] ===============================================');
+console.log('[RBAC] Enhanced RBAC Management System v1.0.0 Ready');
+console.log('[RBAC] ===============================================');
+console.log('[RBAC] Current Time: 2025-07-29 17:02:20 UTC');
+console.log('[RBAC] Current User: nishantng25');
+console.log('[RBAC] User Role: super_admin');
+console.log('[RBAC] System Features:');
+console.log('[RBAC]   ✅ User Management (CRUD)');
+console.log('[RBAC]   ✅ Role Management (CRUD)');
+console.log('[RBAC]   ✅ Permission Discovery');
+console.log('[RBAC]   ✅ Real-time Statistics');
+console.log('[RBAC]   ✅ Audit Logging');
+console.log('[RBAC]   ✅ Data Export/Import');
+console.log('[RBAC]   ✅ Search & Filtering');
+console.log('[RBAC]   ✅ Modal Interfaces');
+console.log('[RBAC]   ✅ Responsive Design');
+console.log('[RBAC]   ✅ Auto-refresh');
+console.log('[RBAC] ===============================================');
+console.log('[RBAC] Ready for production use! 🚀');
+
+function showToast(message, type = 'info') {
+    // Create toast if it doesn't exist
+    let toastContainer = document.getElementById('toast-container');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'toast-container';
+        toastContainer.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+        `;
+        document.body.appendChild(toastContainer);
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show`;
+    toast.style.cssText = `
+        margin-bottom: 10px;
+        min-width: 300px;
+        animation: slideInRight 0.3s ease;
+    `;
+    
+    toast.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+        ${message}
+        <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>
+    `;
+    
+    toastContainer.appendChild(toast);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.remove();
+        }
+    }, 5000);
+}
+
+
+</script>
+{% endblock %}

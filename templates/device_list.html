@@ -1,0 +1,1504 @@
+{% extends "base_enhanced_rbac.html" %}
+
+{% block title %}Device Management{% endblock %}
+{% block page_title %}Device Management{% endblock %}
+{% block page_description %}Manage devices with OTA updates and remote configuration{% endblock %}
+
+{% block styles %}
+<style>
+    .config-input { @apply text-xs px-2 py-1 border rounded; }
+    .batch-section { @apply bg-blue-50 border-2 border-blue-200 rounded-lg p-4 mb-4; }
+    .device-row:hover { @apply bg-gray-50; }
+    .update-indicator { @apply inline-block w-3 h-3 rounded-full mr-2; }
+    .status-online { @apply bg-green-500; }
+    .status-offline { @apply bg-red-500; }
+    .status-updating { @apply bg-yellow-500 animate-pulse; }
+    .sortable-header { @apply cursor-pointer select-none hover:bg-gray-100; }
+    .pagination-btn { @apply px-3 py-1 border rounded-md bg-white hover:bg-gray-100 disabled:opacity-50; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Batch Update Section -->
+    <div class="batch-section">
+        <div class="flex justify-between items-center mb-4">
+            <div>
+                <h2 class="text-lg font-semibold text-blue-800">Batch Configuration Update</h2>
+                <p class="text-sm text-blue-600">Update configuration for all devices shown in current page/filter</p>
+            </div>
+            <div class="flex space-x-2">
+                <button onclick="toggleBatchConfig()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">
+                    <i class="fas fa-cog mr-2"></i>Configure Batch
+                </button>
+                <button onclick="applyBatchUpdate()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm" disabled id="batch-apply-btn">
+                    <i class="fas fa-broadcast-tower mr-2"></i>Update All Devices
+                </button>
+            </div>
+        </div>
+        
+        <!-- Batch Configuration Form -->
+        <div id="batch-config-form" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-white rounded border">
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Target Firmware</label>
+                <select id="batch-firmware" class="w-full config-input">
+                    <option value="">-- No Change --</option>
+                    <option value="3.5.6">v3.5.6 (Latest)</option>
+                    <option value="3.5.5">v3.5.5</option>
+                    <option value="3.5.4">v3.5.4</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">WiFi SSID</label>
+                <input type="text" id="batch-ssid" placeholder="WiFi Network Name" class="w-full config-input">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">WiFi Password</label>
+                <input type="password" id="batch-wifi-password" placeholder="WiFi Password" class="w-full config-input">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">MQTT Server</label>
+                <input type="text" id="batch-mqtt-host" placeholder="mqtt.example.com" class="w-full config-input">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">MQTT Port</label>
+                <input type="number" id="batch-mqtt-port" placeholder="1883" min="1" max="65535" class="w-full config-input">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">MQTT Username</label>
+                <input type="text" id="batch-mqtt-user" placeholder="MQTT Username" class="w-full config-input">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">MQTT Password</label>
+                <input type="password" id="batch-mqtt-password" placeholder="MQTT Password" class="w-full config-input">
+            </div>
+            <div class="flex items-end">
+                <button onclick="previewBatchUpdate()" class="w-full bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-sm">
+                    <i class="fas fa-eye mr-1"></i>Preview Changes
+                </button>
+            </div>
+        </div>
+        
+        <!-- Batch Preview -->
+        <div id="batch-preview" class="hidden mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+            <h4 class="font-medium text-yellow-800 mb-2">Preview: Configuration will be applied to <span id="affected-devices-count">0</span> devices</h4>
+            <div id="batch-changes-summary" class="text-sm text-yellow-700">
+                <!-- Changes summary will appear here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters and Controls -->
+    <div class="bg-white rounded-xl shadow-lg p-6">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div>
+                <label for="searchInput" class="block text-sm font-medium text-gray-700 mb-1">Search Devices</label>
+                <div class="relative">
+                    <input id="searchInput" type="text" placeholder="MAC, Device ID, or Device Type..."
+                           class="w-full bg-gray-50 border-gray-300 px-4 py-2 rounded-lg pl-10 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                </div>
+            </div>
+            <div>
+                <label for="projectFilter" class="block text-sm font-medium text-gray-700 mb-1">Project Filter</label>
+                <select id="projectFilter" class="w-full bg-gray-50 border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="">All Projects</option>
+                </select>
+            </div>
+            <div>
+                <label for="statusFilter" class="block text-sm font-medium text-gray-700 mb-1">Status Filter</label>
+                <select id="statusFilter" class="w-full bg-gray-50 border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="">All Status</option>
+                    <option value="online">Online</option>
+                    <option value="offline">Offline</option>
+                    <option value="updating">Updating</option>
+                </select>
+            </div>
+            <div>
+                <label for="pageSize" class="block text-sm font-medium text-gray-700 mb-1">Items Per Page</label>
+                <select id="pageSize" class="w-full bg-gray-50 border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="10">10</option>
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="250">250</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex justify-between items-center mb-4">
+            <div class="flex space-x-2">
+                <button onclick="selectAllDevices()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm">
+                    <i class="fas fa-check-square mr-2"></i>Select All
+                </button>
+                <button onclick="clearSelection()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm">
+                    <i class="fas fa-times mr-2"></i>Clear Selection
+                </button>
+                <button onclick="exportDevices()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm">
+                    <i class="fas fa-download mr-2"></i>Export
+                </button>
+            </div>
+            <div class="text-sm text-gray-600">
+                Showing <span id="showing-count">0</span> of <span id="total-count">0</span> devices
+                | Selected: <span id="selected-count">0</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Device Table -->
+    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-2 py-3 text-center">
+                            <input type="checkbox" id="select-all-header" onchange="toggleAllSelection()" class="rounded">
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" onclick="handleSort('status')">
+                            Status<i class="fas fa-sort ml-1"></i>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" onclick="handleSort('mac_address')">
+                            MAC Address<i class="fas fa-sort ml-1"></i>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" onclick="handleSort('device_id')">
+                            Device ID<i class="fas fa-sort ml-1"></i>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" onclick="handleSort('device_type')">
+                            Type<i class="fas fa-sort ml-1"></i>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current FW</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target FW</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">WiFi Config</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MQTT Config</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable-header" onclick="handleSort('last_seen')">
+                            Last Seen<i class="fas fa-sort ml-1"></i>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="deviceTable" class="bg-white divide-y divide-gray-200">
+                    <!-- Device rows will be populated here -->
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Pagination -->
+        <div class="bg-gray-50 px-6 py-3 border-t border-gray-200">
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div class="text-sm text-gray-600">
+                    Page <span id="currentPage" class="font-semibold">1</span> of <span id="totalPages" class="font-semibold">1</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="firstPage" onclick="goToFirstPage()" class="pagination-btn" disabled>
+                        <i class="fas fa-angle-double-left"></i>
+                    </button>
+                    <button id="prevPage" onclick="goToPrevPage()" class="pagination-btn" disabled>
+                        <i class="fas fa-angle-left"></i>
+                    </button>
+                    <div id="pageNumbers" class="flex gap-1"></div>
+                    <button id="nextPage" onclick="goToNextPage()" class="pagination-btn" disabled>
+                        <i class="fas fa-angle-right"></i>
+                    </button>
+                    <button id="lastPage" onclick="goToLastPage()" class="pagination-btn" disabled>
+                        <i class="fas fa-angle-double-right"></i>
+                    </button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-sm text-gray-600">Go to:</span>
+                    <input id="pageInput" type="number" min="1" value="1" class="w-16 border-gray-300 rounded p-1 text-sm">
+                    <button onclick="goToPage()" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm">Go</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Device Configuration Modal -->
+<div id="device-config-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50">
+    <div class="relative top-10 mx-auto p-5 border max-w-2xl shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-gray-900" id="modal-device-title">Device Configuration</h3>
+                <button onclick="closeConfigModal()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <form id="device-config-form" class="space-y-4">
+                <input type="hidden" id="config-device-mac">
+                
+                <!-- Firmware Update -->
+                <div class="border rounded-lg p-4">
+                    <h4 class="font-medium text-gray-800 mb-3">Firmware Update</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Current Version</label>
+                            <input type="text" id="current-firmware" readonly class="w-full bg-gray-100 config-input">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Target Version</label>
+                            <select id="target-firmware" class="w-full config-input">
+                                <option value="">-- Select Version --</option>
+                                <option value="3.5.6">v3.5.6 (Latest)</option>
+                                <option value="3.5.5">v3.5.5</option>
+                                <option value="3.5.4">v3.5.4</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- WiFi Configuration -->
+                <div class="border rounded-lg p-4">
+                    <h4 class="font-medium text-gray-800 mb-3">WiFi Configuration</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">SSID</label>
+                            <input type="text" id="wifi-ssid" class="w-full config-input" placeholder="WiFi Network Name">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                            <input type="password" id="wifi-password" class="w-full config-input" placeholder="WiFi Password">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- MQTT Configuration -->
+                <div class="border rounded-lg p-4">
+                    <h4 class="font-medium text-gray-800 mb-3">MQTT Configuration</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Server Host</label>
+                            <input type="text" id="mqtt-host" class="w-full config-input" placeholder="mqtt.example.com">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Port</label>
+                            <input type="number" id="mqtt-port" class="w-full config-input" placeholder="1883" min="1" max="65535">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                            <input type="text" id="mqtt-username" class="w-full config-input" placeholder="MQTT Username">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                            <input type="password" id="mqtt-password-field" class="w-full config-input" placeholder="MQTT Password">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="flex justify-end space-x-3 pt-4">
+                    <button type="button" onclick="closeConfigModal()" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button type="button" onclick="applyDeviceConfig()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md">
+                        Apply Configuration
+                    </button>
+                    <button type="button" onclick="triggerOTAUpdate()" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md">
+                        Start OTA Update
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Notification -->
+<div id="toast" class="fixed bottom-5 right-5 bg-green-600 text-white px-6 py-3 rounded-lg shadow-xl transform translate-y-20 opacity-0 transition-all duration-300 z-50">
+    <i class="fas fa-check-circle mr-2"></i>
+    <span id="toastMessage"></span>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Global variables
+let allDevices = [];
+let filteredDevices = [];
+let selectedDevices = new Set();
+let currentPage = 1;
+let pageSize = 25; // Default to 25 as requested
+let sortState = { key: 'device_id', direction: 'asc' };
+
+// DOM elements
+const elements = {
+    deviceTable: document.getElementById('deviceTable'),
+    searchInput: document.getElementById('searchInput'),
+    projectFilter: document.getElementById('projectFilter'),
+    statusFilter: document.getElementById('statusFilter'),
+    pageSize: document.getElementById('pageSize'),
+    currentPage: document.getElementById('currentPage'),
+    totalPages: document.getElementById('totalPages'),
+    pageInput: document.getElementById('pageInput'),
+    selectAllHeader: document.getElementById('select-all-header'),
+    selectedCount: document.getElementById('selected-count'),
+    showingCount: document.getElementById('showing-count'),
+    totalCount: document.getElementById('total-count')
+};
+
+// Add this to your device list template JavaScript
+
+class RealTimeDeviceMonitor {
+    constructor() {
+        this.socket = null;
+        this.connected = false;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5;
+    }
+    
+    connect() {
+        try {
+            this.socket = io();
+            
+            this.socket.on('connect', () => {
+                console.log('[WebSocket] Connected to device monitoring');
+                this.connected = true;
+                this.reconnectAttempts = 0;
+                this.socket.emit('subscribe_device_updates');
+                this.showConnectionStatus(true);
+            });
+            
+            this.socket.on('disconnect', () => {
+                console.log('[WebSocket] Disconnected from device monitoring');
+                this.connected = false;
+                this.showConnectionStatus(false);
+                this.attemptReconnect();
+            });
+            
+            this.socket.on('device_status_change', (data) => {
+                this.handleStatusChange(data);
+            });
+            
+            this.socket.on('device_heartbeat', (data) => {
+                this.handleHeartbeat(data);
+            });
+            
+            this.socket.on('ota_started', (data) => {
+                this.handleOTAStarted(data);
+            });
+            
+            this.socket.on('ota_progress_update', (data) => {
+                this.handleOTAProgress(data);
+            });
+            
+            this.socket.on('ota_completed', (data) => {
+                this.handleOTACompleted(data);
+            });
+            
+        } catch (error) {
+            console.error('[WebSocket] Connection error:', error);
+            this.attemptReconnect();
+        }
+    }
+    
+    handleStatusChange(data) {
+        console.log('[Device Status] Status changed:', data);
+        
+        // Update device in local data
+        const device = allDevices.find(d => d.mac_address === data.mac_address);
+        if (device) {
+            device.status = data.status;
+            device.last_status_change = data.timestamp;
+        }
+        
+        // Update UI if device is visible
+        this.updateDeviceInTable(data.mac_address, {
+            status: data.status,
+            statusChange: true
+        });
+        
+        // Show notification for important status changes
+        if (data.status === 'offline' && data.previous_status === 'online') {
+            this.showStatusNotification(`Device ${data.device_id} went offline`, 'warning');
+        } else if (data.status === 'online' && data.previous_status === 'offline') {
+            this.showStatusNotification(`Device ${data.device_id} came online`, 'success');
+        }
+    }
+    
+    handleHeartbeat(data) {
+        // Update last seen time
+        const device = allDevices.find(d => d.mac_address === data.mac_address);
+        if (device) {
+            device.last_seen = data.timestamp;
+            device.status = data.status;
+        }
+        
+        // Update UI silently (no notification for heartbeats)
+        this.updateDeviceInTable(data.mac_address, {
+            status: data.status,
+            lastSeen: data.timestamp
+        });
+    }
+    
+    handleOTAStarted(data) {
+        console.log('[OTA] Update started:', data);
+        
+        const device = allDevices.find(d => d.mac_address === data.mac_address);
+        if (device) {
+            device.status = 'updating';
+            device.update_in_progress = true;
+            device.update_progress = 0;
+            device.target_fw_version = data.target_version;
+        }
+        
+        this.updateDeviceInTable(data.mac_address, {
+            status: 'updating',
+            updateInProgress: true,
+            progress: 0
+        });
+        
+        this.showStatusNotification(`OTA update started for ${data.device_id} → ${data.target_version}`, 'info');
+    }
+    
+    handleOTAProgress(data) {
+        console.log('[OTA] Progress update:', data);
+        
+        const device = allDevices.find(d => d.mac_address === data.mac_address);
+        if (device) {
+            device.update_progress = data.progress;
+        }
+        
+        this.updateDeviceInTable(data.mac_address, {
+            progress: data.progress
+        });
+        
+        // Update progress in any open modals
+        this.updateOTAProgress(data.mac_address, data.progress);
+    }
+    
+    handleOTACompleted(data) {
+        console.log('[OTA] Update completed:', data);
+        
+        const device = allDevices.find(d => d.mac_address === data.mac_address);
+        if (device) {
+            device.status = 'online';
+            device.update_in_progress = false;
+            device.update_progress = 100;
+            device.current_fw_version = data.firmware_version;
+        }
+        
+        this.updateDeviceInTable(data.mac_address, {
+            status: 'online',
+            updateInProgress: false,
+            currentFirmware: data.firmware_version,
+            progress: 100
+        });
+        
+        this.showStatusNotification(`OTA update completed for ${data.device_id} → ${data.firmware_version}`, 'success');
+        
+        // Auto-refresh table after a short delay
+        setTimeout(() => {
+            if (device) {
+                device.update_progress = 0; // Reset progress
+            }
+            renderTable();
+        }, 2000);
+    }
+    
+    updateDeviceInTable(macAddress, updates) {
+        const row = document.querySelector(`tr[data-mac="${macAddress}"]`);
+        if (!row) return;
+        
+        // Update status indicator
+        if (updates.status) {
+            const statusCell = row.querySelector('.update-indicator');
+            if (statusCell) {
+                statusCell.className = `update-indicator ${getStatusClass(updates.status, updates.updateInProgress)}`;
+                statusCell.title = getStatusTitle(updates.status, updates.updateInProgress);
+            }
+            
+            const statusText = row.querySelector('.update-indicator').nextElementSibling;
+            if (statusText) {
+                statusText.textContent = getStatusText(updates.status, updates.updateInProgress);
+                statusText.className = `text-xs font-medium ${getStatusTextClass(updates.status)}`;
+            }
+        }
+        
+        // Update firmware version
+        if (updates.currentFirmware) {
+            const firmwareCell = row.cells[5].querySelector('span');
+            if (firmwareCell) {
+                firmwareCell.textContent = updates.currentFirmware;
+            }
+        }
+        
+        // Update last seen
+        if (updates.lastSeen) {
+            const lastSeenCell = row.cells[9];
+            if (lastSeenCell) {
+                lastSeenCell.textContent = formatDate(updates.lastSeen);
+            }
+        }
+        
+        // Add visual effect for status changes
+        if (updates.statusChange) {
+            row.style.backgroundColor = '#f3f4f6';
+            setTimeout(() => {
+                row.style.backgroundColor = '';
+            }, 2000);
+        }
+    }
+    
+    updateOTAProgress(macAddress, progress) {
+        // Update progress in config modal if open
+        const modal = document.getElementById('device-config-modal');
+        const deviceMacInput = document.getElementById('config-device-mac');
+        
+        if (!modal.classList.contains('hidden') && deviceMacInput.value === macAddress) {
+            // Add or update progress bar in modal
+            let progressBar = document.getElementById('ota-progress-bar');
+            if (!progressBar) {
+                const modalContent = modal.querySelector('.mt-3');
+                const progressContainer = document.createElement('div');
+                progressContainer.innerHTML = `
+                    <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-sm font-medium text-blue-800">OTA Update Progress</span>
+                            <span id="ota-progress-text" class="text-sm text-blue-600">${progress}%</span>
+                        </div>
+                        <div class="w-full bg-blue-200 rounded-full h-2">
+                            <div id="ota-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: ${progress}%"></div>
+                        </div>
+                    </div>
+                `;
+                modalContent.insertBefore(progressContainer, modalContent.firstChild);
+            } else {
+                progressBar.style.width = `${progress}%`;
+                document.getElementById('ota-progress-text').textContent = `${progress}%`;
+                
+                // Remove progress bar when complete
+                if (progress >= 100) {
+                    setTimeout(() => {
+                        const container = progressBar.closest('.mb-4');
+                        if (container) container.remove();
+                    }, 3000);
+                }
+            }
+        }
+    }
+    
+    showConnectionStatus(connected) {
+        // Update connection indicator in UI
+        let indicator = document.getElementById('websocket-indicator');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'websocket-indicator';
+            indicator.className = 'fixed top-20 right-4 px-3 py-1 rounded-full text-xs z-50';
+            document.body.appendChild(indicator);
+        }
+        
+        if (connected) {
+            indicator.className = 'fixed top-20 right-4 px-3 py-1 rounded-full text-xs z-50 bg-green-100 text-green-800';
+            indicator.innerHTML = '<i class="fas fa-wifi mr-1"></i>Live Updates Active';
+        } else {
+            indicator.className = 'fixed top-20 right-4 px-3 py-1 rounded-full text-xs z-50 bg-red-100 text-red-800';
+            indicator.innerHTML = '<i class="fas fa-wifi-slash mr-1"></i>Connection Lost';
+        }
+        
+        // Auto-hide success indicator after 3 seconds
+        if (connected) {
+            setTimeout(() => {
+                if (indicator && indicator.parentNode) {
+                    indicator.style.opacity = '0.7';
+                }
+            }, 3000);
+        }
+    }
+    
+    showStatusNotification(message, type) {
+        // Create floating notification
+        const notification = document.createElement('div');
+        notification.className = `fixed top-32 right-4 px-4 py-2 rounded-lg shadow-lg text-sm z-50 transform transition-all duration-300 translate-x-full opacity-0`;
+        
+        const bgColor = {
+            'success': 'bg-green-600 text-white',
+            'warning': 'bg-yellow-600 text-white',
+            'error': 'bg-red-600 text-white',
+            'info': 'bg-blue-600 text-white'
+        }[type] || 'bg-gray-600 text-white';
+        
+        notification.className += ` ${bgColor}`;
+        
+        const icon = {
+            'success': 'fas fa-check-circle',
+            'warning': 'fas fa-exclamation-triangle',
+            'error': 'fas fa-times-circle',
+            'info': 'fas fa-info-circle'
+        }[type] || 'fas fa-bell';
+        
+        notification.innerHTML = `
+            <div class="flex items-center">
+                <i class="${icon} mr-2"></i>
+                <span>${message}</span>
+            </div>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Animate in
+        setTimeout(() => {
+            notification.classList.remove('translate-x-full', 'opacity-0');
+        }, 100);
+        
+        // Animate out and remove
+        setTimeout(() => {
+            notification.classList.add('translate-x-full', 'opacity-0');
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 300);
+        }, 4000);
+    }
+    
+    attemptReconnect() {
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.reconnectAttempts++;
+            console.log(`[WebSocket] Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+            
+            setTimeout(() => {
+                this.connect();
+            }, 2000 * this.reconnectAttempts); // Exponential backoff
+        } else {
+            console.log('[WebSocket] Max reconnect attempts reached');
+            this.showConnectionStatus(false);
+        }
+    }
+    
+    disconnect() {
+        if (this.socket) {
+            this.socket.disconnect();
+            this.socket = null;
+            this.connected = false;
+        }
+    }
+}
+
+// Initialize real-time monitoring
+let deviceMonitor;
+
+// Update the existing DOMContentLoaded event
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('[Device Management] Initializing enhanced OTA system with real-time monitoring...');
+    
+    // Initialize WebSocket monitoring
+    deviceMonitor = new RealTimeDeviceMonitor();
+    deviceMonitor.connect();
+    
+    // Initialize other components
+    setupEventListeners();
+    fetchDevices();
+});
+
+// Clean up on page unload
+window.addEventListener('beforeunload', () => {
+    if (deviceMonitor) {
+        deviceMonitor.disconnect();
+    }
+});
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('[Device Management] Initializing enhanced OTA system...');
+    setupEventListeners();
+    fetchDevices();
+});
+
+function setupEventListeners() {
+    elements.searchInput.addEventListener('input', debounce(applyFilters, 300));
+    elements.projectFilter.addEventListener('change', applyFilters);
+    elements.statusFilter.addEventListener('change', applyFilters);
+    elements.pageSize.addEventListener('change', () => {
+        pageSize = parseInt(elements.pageSize.value);
+        currentPage = 1;
+        applyFilters();
+    });
+}
+
+// Fetch devices from API
+async function fetchDevices() {
+    showLoading(true, 'Loading devices...');
+    
+    try {
+        const projectId = sessionStorage.getItem('currentProjectId') || '1';
+        const response = await fetch(`/api/project/${projectId}/devices`);
+        
+        if (!response.ok) throw new Error('Failed to fetch devices');
+        
+        const data = await response.json();
+        
+        // Enhance device data with status and configuration
+        allDevices = data.map(device => ({
+            ...device,
+            status: getDeviceStatus(device.last_seen),
+            wifi_ssid: device.wifi_ssid || '',
+            wifi_password: device.wifi_password || '',
+            mqtt_host: device.mqtt_host || '',
+            mqtt_port: device.mqtt_port || 1883,
+            mqtt_username: device.mqtt_username || '',
+            mqtt_password: device.mqtt_password || '',
+            update_in_progress: false
+        }));
+        
+        populateProjectFilter(allDevices);
+        applyFilters();
+        
+        console.log(`[Device Management] Loaded ${allDevices.length} devices`);
+        
+    } catch (error) {
+        console.error('Error fetching devices:', error);
+        showError('Failed to load devices. Please check connection and refresh.');
+    } finally {
+        showLoading(false);
+    }
+}
+
+function getDeviceStatus(lastSeen) {
+    if (!lastSeen) return 'offline';
+    
+    const lastSeenDate = new Date(lastSeen);
+    const now = new Date();
+    const diffMinutes = (now - lastSeenDate) / (1000 * 60);
+    
+    if (diffMinutes < 5) return 'online';
+    if (diffMinutes < 60) return 'recently_online';
+    return 'offline';
+}
+
+function applyFilters() {
+    const searchTerm = elements.searchInput.value.toLowerCase().trim();
+    const projectFilter = elements.projectFilter.value;
+    const statusFilter = elements.statusFilter.value;
+    
+    filteredDevices = allDevices.filter(device => {
+        const matchesSearch = !searchTerm || 
+            (device.mac_address && device.mac_address.toLowerCase().includes(searchTerm)) ||
+            (device.device_id && device.device_id.toLowerCase().includes(searchTerm)) ||
+            (device.device_type && device.device_type.toLowerCase().includes(searchTerm));
+        
+        const matchesProject = !projectFilter || device.project === projectFilter;
+        const matchesStatus = !statusFilter || device.status === statusFilter;
+        
+        return matchesSearch && matchesProject && matchesStatus;
+    });
+    
+    // Apply sorting
+    if (sortState.key) {
+        filteredDevices.sort((a, b) => {
+            let aVal = a[sortState.key] || '';
+            let bVal = b[sortState.key] || '';
+            
+            if (sortState.key === 'last_seen') {
+                aVal = new Date(aVal || 0);
+                bVal = new Date(bVal || 0);
+            }
+            
+            if (aVal < bVal) return sortState.direction === 'asc' ? -1 : 1;
+            if (aVal > bVal) return sortState.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }
+    
+    currentPage = 1;
+    updateCounts();
+    renderTable();
+    updatePagination();
+    updateBatchButton();
+}
+
+function renderTable() {
+    const startIndex = (currentPage - 1) * pageSize;
+    const paginatedDevices = filteredDevices.slice(startIndex, startIndex + pageSize);
+    
+    if (paginatedDevices.length === 0) {
+        elements.deviceTable.innerHTML = `
+            <tr>
+                <td colspan="11" class="px-6 py-10 text-center text-gray-500">
+                    <i class="fas fa-microchip text-4xl mb-4 text-gray-300"></i>
+                    <p>No devices found matching your criteria</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    elements.deviceTable.innerHTML = paginatedDevices.map(device => `
+        <tr class="device-row hover:bg-gray-50" data-mac="${device.mac_address}">
+            <td class="px-2 py-4 text-center">
+                <input type="checkbox" class="device-checkbox rounded" value="${device.mac_address}" 
+                       onchange="updateSelection()" ${selectedDevices.has(device.mac_address) ? 'checked' : ''}>
+            </td>
+            <td class="px-4 py-4">
+                <div class="flex items-center">
+                    <span class="update-indicator ${getStatusClass(device.status, device.update_in_progress)}" 
+                          title="${getStatusTitle(device.status, device.update_in_progress)}"></span>
+                    <span class="text-xs font-medium ${getStatusTextClass(device.status)}">
+                        ${getStatusText(device.status, device.update_in_progress)}
+                    </span>
+                </div>
+            </td>
+            <td class="px-4 py-4 font-mono text-sm">${device.mac_address || '-'}</td>
+            <td class="px-4 py-4 font-medium">${device.device_id || '-'}</td>
+            <td class="px-4 py-4 text-sm">${device.device_type || '-'}</td>
+            <td class="px-4 py-4 text-sm">
+                <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                    ${device.current_fw_version || 'Unknown'}
+                </span>
+            </td>
+            <td class="px-4 py-4">
+                <input type="text" value="${device.target_fw_version || ''}" 
+                       data-field="target_fw_version" data-mac="${device.mac_address}"
+                       class="w-20 config-input" placeholder="3.5.6">
+            </td>
+            <td class="px-4 py-4">
+                <div class="text-xs space-y-1">
+                    <div><strong>SSID:</strong> ${device.wifi_ssid || 'Not set'}</div>
+                    <div><strong>Pass:</strong> ${device.wifi_password ? '••••••••' : 'Not set'}</div>
+                </div>
+            </td>
+            <td class="px-4 py-4">
+                <div class="text-xs space-y-1">
+                    <div><strong>Host:</strong> ${device.mqtt_host || 'Not set'}</div>
+                    <div><strong>Port:</strong> ${device.mqtt_port || 'Not set'}</div>
+                    <div><strong>User:</strong> ${device.mqtt_username || 'Not set'}</div>
+                </div>
+            </td>
+            <td class="px-4 py-4 text-sm text-gray-500">${formatDate(device.last_seen)}</td>
+            <td class="px-4 py-4">
+                <div class="flex space-x-1">
+                    <button onclick="openConfigModal('${device.mac_address}')" 
+                            class="text-blue-600 hover:text-blue-900 p-1" title="Configure">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                    <button onclick="quickUpdateFirmware('${device.mac_address}')" 
+                            class="text-green-600 hover:text-green-900 p-1" title="Quick OTA Update">
+                        <i class="fas fa-download"></i>
+                    </button>
+                    <button onclick="rebootDevice('${device.mac_address}')" 
+                            class="text-orange-600 hover:text-orange-900 p-1" title="Reboot">
+                        <i class="fas fa-power-off"></i>
+                    </button>
+                    <button onclick="saveDeviceConfig('${device.mac_address}')" 
+                            class="text-purple-600 hover:text-purple-900 p-1" title="Save Config">
+                        <i class="fas fa-save"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// Status helper functions
+function getStatusClass(status, updating) {
+    if (updating) return 'status-updating';
+    if (status === 'online') return 'status-online';
+    return 'status-offline';
+}
+
+function getStatusTextClass(status) {
+    if (status === 'online') return 'text-green-700';
+    return 'text-red-700';
+}
+
+function getStatusText(status, updating) {
+    if (updating) return 'UPDATING';
+    if (status === 'online') return 'ONLINE';
+    if (status === 'recently_online') return 'RECENT';
+    return 'OFFLINE';
+}
+
+function getStatusTitle(status, updating) {
+    if (updating) return 'OTA Update in progress';
+    if (status === 'online') return 'Device is online and responsive';
+    if (status === 'recently_online') return 'Device was online recently';
+    return 'Device is offline or not responding';
+}
+
+// Batch update functions
+function toggleBatchConfig() {
+    const form = document.getElementById('batch-config-form');
+    form.classList.toggle('hidden');
+    
+    if (!form.classList.contains('hidden')) {
+        document.getElementById('batch-apply-btn').disabled = false;
+    }
+}
+
+function previewBatchUpdate() {
+    const changes = getBatchChanges();
+    const affectedCount = filteredDevices.length;
+    
+    document.getElementById('affected-devices-count').textContent = affectedCount;
+    
+    const changesHtml = Object.entries(changes)
+        .filter(([_, value]) => value && value.trim())
+        .map(([key, value]) => `<div>• ${key}: ${key.includes('password') ? '••••••••' : value}</div>`)
+        .join('');
+    
+    document.getElementById('batch-changes-summary').innerHTML = changesHtml || '<div>No changes specified</div>';
+    document.getElementById('batch-preview').classList.remove('hidden');
+}
+
+function getBatchChanges() {
+    return {
+        'Target Firmware': document.getElementById('batch-firmware').value,
+        'WiFi SSID': document.getElementById('batch-ssid').value,
+        'WiFi Password': document.getElementById('batch-wifi-password').value,
+        'MQTT Host': document.getElementById('batch-mqtt-host').value,
+        'MQTT Port': document.getElementById('batch-mqtt-port').value,
+        'MQTT Username': document.getElementById('batch-mqtt-user').value,
+        'MQTT Password': document.getElementById('batch-mqtt-password').value
+    };
+}
+
+async function applyBatchUpdate() {
+    const changes = getBatchChanges();
+    const hasChanges = Object.values(changes).some(value => value && value.trim());
+    
+    if (!hasChanges) {
+        showToast('Please specify at least one configuration change', 'error');
+        return;
+    }
+    
+    const affectedDevices = filteredDevices;
+    const confirmMessage = `Apply configuration changes to ${affectedDevices.length} devices?\n\nThis will:\n${Object.entries(changes)
+        .filter(([_, value]) => value && value.trim())
+        .map(([key, value]) => `• Update ${key}`)
+        .join('\n')}`;
+    
+    if (!confirm(confirmMessage)) return;
+    
+    // Show progress
+    const progressToast = showProgressToast(`Updating ${affectedDevices.length} devices...`);
+    
+    try {
+        // Apply changes to each device
+        for (let i = 0; i < affectedDevices.length; i++) {
+            const device = affectedDevices[i];
+            
+            // Update progress
+            updateProgressToast(progressToast, `Updating device ${i + 1}/${affectedDevices.length}: ${device.device_id}`);
+            
+            // Apply configuration
+            await applyConfigToDevice(device.mac_address, changes);
+            
+            // Small delay to prevent overwhelming the system
+            if (i < affectedDevices.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+        
+        hideProgressToast(progressToast);
+        showToast(`Successfully updated ${affectedDevices.length} devices`, 'success');
+        
+        // Refresh device list
+        await fetchDevices();
+        
+    } catch (error) {
+        hideProgressToast(progressToast);
+        console.error('Batch update error:', error);
+        showToast('Batch update failed: ' + error.message, 'error');
+    }
+}
+
+// Device configuration functions
+function openConfigModal(macAddress) {
+    const device = allDevices.find(d => d.mac_address === macAddress);
+    if (!device) return;
+    
+    // Populate modal with device data
+    document.getElementById('config-device-mac').value = macAddress;
+    document.getElementById('modal-device-title').textContent = `Configure ${device.device_id || macAddress}`;
+    document.getElementById('current-firmware').value = device.current_fw_version || 'Unknown';
+    document.getElementById('target-firmware').value = device.target_fw_version || '';
+    document.getElementById('wifi-ssid').value = device.wifi_ssid || '';
+    document.getElementById('wifi-password').value = device.wifi_password || '';
+    document.getElementById('mqtt-host').value = device.mqtt_host || '';
+    document.getElementById('mqtt-port').value = device.mqtt_port || '';
+    document.getElementById('mqtt-username').value = device.mqtt_username || '';
+    document.getElementById('mqtt-password-field').value = device.mqtt_password || '';
+    
+    document.getElementById('device-config-modal').classList.remove('hidden');
+}
+
+function closeConfigModal() {
+    document.getElementById('device-config-modal').classList.add('hidden');
+}
+
+async function applyDeviceConfig() {
+    const macAddress = document.getElementById('config-device-mac').value;
+    
+    const config = {
+        target_fw_version: document.getElementById('target-firmware').value,
+        wifi_ssid: document.getElementById('wifi-ssid').value,
+        wifi_password: document.getElementById('wifi-password').value,
+        mqtt_host: document.getElementById('mqtt-host').value,
+        mqtt_port: document.getElementById('mqtt-port').value,
+        mqtt_username: document.getElementById('mqtt-username').value,
+        mqtt_password: document.getElementById('mqtt-password-field').value
+    };
+    
+    try {
+        await applyConfigToDevice(macAddress, config);
+        showToast('Device configuration updated successfully', 'success');
+        closeConfigModal();
+        await fetchDevices(); // Refresh
+    } catch (error) {
+        console.error('Config update error:', error);
+        showToast('Failed to update device configuration', 'error');
+    }
+}
+
+async function applyConfigToDevice(macAddress, config) {
+    // This would call your backend API to update device configuration
+    // For now, we'll simulate the API call
+    
+    console.log(`Applying config to device ${macAddress}:`, config);
+    
+    // Simulate API call
+    const response = await fetch(`/api/device/${macAddress}/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+    });
+    
+    if (!response.ok) {
+        throw new Error(`Failed to update device configuration: ${response.statusText}`);
+    }
+    
+    return await response.json();
+}
+
+async function triggerOTAUpdate() {
+    const macAddress = document.getElementById('config-device-mac').value;
+    const targetFirmware = document.getElementById('target-firmware').value;
+    
+    if (!targetFirmware) {
+        showToast('Please select a target firmware version', 'error');
+        return;
+    }
+    
+    if (!confirm(`Start OTA update to firmware ${targetFirmware}?\n\nThis will reboot the device and may take several minutes.`)) {
+        return;
+    }
+    
+    try {
+        // Mark device as updating
+        const device = allDevices.find(d => d.mac_address === macAddress);
+        if (device) {
+            device.update_in_progress = true;
+        }
+        
+        renderTable(); // Update UI to show updating status
+        
+        // Call OTA update API
+        const response = await fetch(`/api/device/${macAddress}/ota-update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target_version: targetFirmware })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`OTA update failed: ${response.statusText}`);
+        }
+        
+        showToast('OTA update started successfully', 'success');
+        closeConfigModal();
+        
+        // Monitor update progress (you could implement WebSocket updates here)
+        setTimeout(() => {
+            if (device) {
+                device.update_in_progress = false;
+                device.current_fw_version = targetFirmware;
+            }
+            renderTable();
+            showToast(`OTA update completed for ${device?.device_id || macAddress}`, 'success');
+        }, 30000); // Simulate 30-second update
+        
+    } catch (error) {
+        console.error('OTA update error:', error);
+        showToast('OTA update failed: ' + error.message, 'error');
+        
+        // Reset updating status
+        const device = allDevices.find(d => d.mac_address === macAddress);
+        if (device) {
+            device.update_in_progress = false;
+        }
+        renderTable();
+    }
+}
+
+// Quick action functions
+async function quickUpdateFirmware(macAddress) {
+    const device = allDevices.find(d => d.mac_address === macAddress);
+    if (!device) return;
+    
+    const targetFirmware = device.target_fw_version || '3.5.6';
+    
+    if (confirm(`Start OTA update for ${device.device_id || macAddress} to firmware ${targetFirmware}?`)) {
+        try {
+            device.update_in_progress = true;
+            renderTable();
+            
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate update
+            
+            device.current_fw_version = targetFirmware;
+            device.update_in_progress = false;
+            renderTable();
+            
+            showToast(`OTA update completed for ${device.device_id || macAddress}`, 'success');
+        } catch (error) {
+            device.update_in_progress = false;
+            renderTable();
+            showToast('OTA update failed', 'error');
+        }
+    }
+}
+
+async function rebootDevice(macAddress) {
+    const device = allDevices.find(d => d.mac_address === macAddress);
+    if (!device) return;
+    
+    if (confirm(`Reboot device ${device.device_id || macAddress}?`)) {
+        try {
+            // Call reboot API
+            const response = await fetch(`/api/device/${macAddress}/reboot`, {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                showToast(`Reboot command sent to ${device.device_id || macAddress}`, 'success');
+            } else {
+                throw new Error('Reboot command failed');
+            }
+        } catch (error) {
+            console.error('Reboot error:', error);
+            showToast('Failed to reboot device', 'error');
+        }
+    }
+}
+
+async function saveDeviceConfig(macAddress) {
+    const row = document.querySelector(`tr[data-mac="${macAddress}"]`);
+    if (!row) return;
+    
+    const device = allDevices.find(d => d.mac_address === macAddress);
+    if (!device) return;
+    
+    // Get updated target firmware from input
+    const targetFwInput = row.querySelector('[data-field="target_fw_version"]');
+    const newTargetFw = targetFwInput.value.trim();
+    
+    if (newTargetFw !== device.target_fw_version) {
+        try {
+            const response = await fetch(`/api/device/${macAddress}/config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target_fw_version: newTargetFw })
+            });
+            
+            if (response.ok) {
+                device.target_fw_version = newTargetFw;
+                showToast(`Configuration saved for ${device.device_id || macAddress}`, 'success');
+            } else {
+                throw new Error('Save failed');
+            }
+        } catch (error) {
+            console.error('Save error:', error);
+            showToast('Failed to save configuration', 'error');
+        }
+    }
+}
+
+// Selection management
+function updateSelection() {
+    selectedDevices.clear();
+    document.querySelectorAll('.device-checkbox:checked').forEach(checkbox => {
+        selectedDevices.add(checkbox.value);
+    });
+    
+    elements.selectedCount.textContent = selectedDevices.size;
+    elements.selectAllHeader.checked = selectedDevices.size === filteredDevices.slice((currentPage - 1) * pageSize, currentPage * pageSize).length;
+    updateBatchButton();
+}
+
+function toggleAllSelection() {
+    const checked = elements.selectAllHeader.checked;
+    const pageDevices = filteredDevices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    
+    pageDevices.forEach(device => {
+        if (checked) {
+            selectedDevices.add(device.mac_address);
+        } else {
+            selectedDevices.delete(device.mac_address);
+        }
+    });
+    
+    document.querySelectorAll('.device-checkbox').forEach(checkbox => {
+        checkbox.checked = checked;
+    });
+    
+    elements.selectedCount.textContent = selectedDevices.size;
+    updateBatchButton();
+}
+
+function selectAllDevices() {
+    filteredDevices.forEach(device => {
+        selectedDevices.add(device.mac_address);
+    });
+    
+    document.querySelectorAll('.device-checkbox').forEach(checkbox => {
+        checkbox.checked = true;
+    });
+    
+    elements.selectAllHeader.checked = true;
+    elements.selectedCount.textContent = selectedDevices.size;
+    updateBatchButton();
+}
+
+function clearSelection() {
+    selectedDevices.clear();
+    document.querySelectorAll('.device-checkbox').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    elements.selectAllHeader.checked = false;
+    elements.selectedCount.textContent = '0';
+    updateBatchButton();
+}
+
+function updateBatchButton() {
+    const batchBtn = document.getElementById('batch-apply-btn');
+    batchBtn.disabled = filteredDevices.length === 0;
+}
+
+// Utility functions
+function updateCounts() {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, filteredDevices.length);
+    
+    elements.showingCount.textContent = filteredDevices.length === 0 ? '0' : `${startIndex + 1}-${endIndex}`;
+    elements.totalCount.textContent = allDevices.length;
+}
+
+function populateProjectFilter(devices) {
+    const projects = [...new Set(devices.map(d => d.project).filter(p => p))];
+    projects.sort();
+    
+    const currentVal = elements.projectFilter.value;
+    elements.projectFilter.innerHTML = '<option value="">All Projects</option>';
+    projects.forEach(project => {
+        elements.projectFilter.innerHTML += `<option value="${project}">${project}</option>`;
+    });
+    elements.projectFilter.value = currentVal;
+}
+
+function formatDate(dateString) {
+    if (!dateString) return 'Never';
+    try {
+        return new Date(dateString).toLocaleString();
+    } catch (e) {
+        return 'Invalid date';
+    }
+}
+
+function showLoading(show, message = '') {
+    document.body.style.cursor = show ? 'wait' : 'default';
+    if (show) {
+        elements.deviceTable.innerHTML = `
+            <tr>
+                <td colspan="11" class="px-6 py-10 text-center text-gray-500">
+                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                    <p>${message}</p>
+                </td>
+            </tr>
+        `;
+    }
+}
+
+function showError(message) {
+    elements.deviceTable.innerHTML = `
+        <tr>
+            <td colspan="11" class="px-6 py-10 text-center text-red-500">
+                <i class="fas fa-exclamation-triangle text-2xl mb-2"></i>
+                <p>${message}</p>
+            </td>
+        </tr>
+    `;
+}
+
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    const toastMessage = document.getElementById('toastMessage');
+    
+    toastMessage.textContent = message;
+    toast.className = `fixed bottom-5 right-5 px-6 py-3 rounded-lg shadow-xl transform transition-all duration-300 z-50 ${
+        type === 'error' ? 'bg-red-600 text-white' : 
+        type === 'warning' ? 'bg-yellow-600 text-white' :
+        'bg-green-600 text-white'
+    }`;
+    
+    toast.classList.remove('translate-y-20', 'opacity-0');
+    setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+    }, 4000);
+}
+
+function showProgressToast(message) {
+    const toast = document.createElement('div');
+    toast.id = 'progress-toast';
+    toast.className = 'fixed bottom-20 right-5 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-xl z-50';
+    toast.innerHTML = `
+        <div class="flex items-center">
+            <i class="fas fa-spinner fa-spin mr-2"></i>
+            <span id="progress-message">${message}</span>
+        </div>
+    `;
+    document.body.appendChild(toast);
+    return toast;
+}
+
+function updateProgressToast(toast, message) {
+    const messageEl = toast.querySelector('#progress-message');
+    if (messageEl) {
+        messageEl.textContent = message;
+    }
+}
+
+function hideProgressToast(toast) {
+    if (toast && toast.parentNode) {
+        toast.remove();
+    }
+}
+
+// Pagination functions
+function updatePagination() {
+    const totalPages = Math.ceil(filteredDevices.length / pageSize) || 1;
+    currentPage = Math.min(currentPage, totalPages);
+    
+    elements.currentPage.textContent = currentPage;
+    elements.totalPages.textContent = totalPages;
+    elements.pageInput.value = currentPage;
+    elements.pageInput.max = totalPages;
+    
+    // Update button states
+    document.getElementById('firstPage').disabled = currentPage === 1;
+    document.getElementById('prevPage').disabled = currentPage === 1;
+    document.getElementById('nextPage').disabled = currentPage === totalPages;
+    document.getElementById('lastPage').disabled = currentPage === totalPages;
+    
+    // Update page numbers
+    const pageNumbers = document.getElementById('pageNumbers');
+    pageNumbers.innerHTML = '';
+    
+    const start = Math.max(1, currentPage - 2);
+    const end = Math.min(totalPages, start + 4);
+    
+    for (let i = start; i <= end; i++) {
+        const btn = document.createElement('button');
+        btn.className = `pagination-btn ${i === currentPage ? 'active bg-blue-600 text-white' : ''}`;
+        btn.textContent = i;
+        btn.onclick = () => goToPageNumber(i);
+        pageNumbers.appendChild(btn);
+    }
+}
+
+function goToPageNumber(pageNum) {
+    const totalPages = Math.ceil(filteredDevices.length / pageSize) || 1;
+    if (pageNum >= 1 && pageNum <= totalPages) {
+        currentPage = pageNum;
+        renderTable();
+        updatePagination();
+        updateCounts();
+    }
+}
+
+function goToFirstPage() { goToPageNumber(1); }
+function goToPrevPage() { if (currentPage > 1) goToPageNumber(currentPage - 1); }
+function goToNextPage() { const totalPages = Math.ceil(filteredDevices.length / pageSize) || 1; if (currentPage < totalPages) goToPageNumber(currentPage + 1); }
+function goToLastPage() { const totalPages = Math.ceil(filteredDevices.length / pageSize) || 1; goToPageNumber(totalPages); }
+function goToPage() {
+    const pageNum = parseInt(elements.pageInput.value);
+    goToPageNumber(pageNum);
+}
+
+// Sorting
+function handleSort(key) {
+    if (sortState.key === key) {
+        sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortState.key = key;
+        sortState.direction = 'asc';
+    }
+    
+    // Update sort indicators
+    document.querySelectorAll('.sortable-header i').forEach(icon => {
+        icon.className = 'fas fa-sort ml-1';
+    });
+    
+    const header = document.querySelector(`[onclick="handleSort('${key}')"] i`);
+    if (header) {
+        header.className = `fas fa-sort-${sortState.direction === 'asc' ? 'up' : 'down'} ml-1`;
+    }
+    
+    applyFilters();
+}
+
+// Export functionality
+function exportDevices() {
+    const csvContent = generateCSV(filteredDevices);
+    downloadCSV(csvContent, `devices_export_${new Date().toISOString().slice(0, 10)}.csv`);
+    showToast(`Exported ${filteredDevices.length} devices`, 'success');
+}
+
+function generateCSV(devices) {
+    const headers = [
+        'MAC Address', 'Device ID', 'Device Type', 'Status', 'Current Firmware', 
+        'Target Firmware', 'Project', 'WiFi SSID', 'MQTT Host', 'MQTT Port', 
+        'Last Seen', 'Assigned User'
+    ];
+    
+    const rows = devices.map(device => [
+        device.mac_address || '',
+        device.device_id || '',
+        device.device_type || '',
+        device.status || '',
+        device.current_fw_version || '',
+        device.target_fw_version || '',
+        device.project || '',
+        device.wifi_ssid || '',
+        device.mqtt_host || '',
+        device.mqtt_port || '',
+        device.last_seen || '',
+        device.assigned_user || ''
+    ]);
+    
+    return [headers, ...rows].map(row => 
+        row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(',')
+    ).join('\n');
+}
+
+function downloadCSV(content, filename) {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Utility function for debouncing
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+</script>
+{% endblock %}

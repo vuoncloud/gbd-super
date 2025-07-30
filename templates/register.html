@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Account - RBAC System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .bg-gradient { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+        }
+        .glass-effect {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .form-floating {
+            position: relative;
+        }
+        .form-floating input:focus + label,
+        .form-floating input:not(:placeholder-shown) + label {
+            transform: translateY(-1.5rem) scale(0.75);
+            color: #3b82f6;
+        }
+        .form-floating label {
+            position: absolute;
+            top: 0.75rem;
+            left: 0.75rem;
+            transition: all 0.2s ease-in-out;
+            pointer-events: none;
+            color: #6b7280;
+        }
+        .animate-fade-in { animation: fadeIn 0.6s ease-out; }
+        .animate-slide-up { animation: slideUp 0.8s ease-out; }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .strength-meter {
+            height: 4px;
+            border-radius: 2px;
+            transition: all 0.3s ease;
+        }
+        
+        .strength-weak { background: #ef4444; width: 25%; }
+        .strength-fair { background: #f59e0b; width: 50%; }
+        .strength-good { background: #10b981; width: 75%; }
+        .strength-strong { background: #059669; width: 100%; }
+    </style>
+</head>
+<body class="bg-gradient min-h-screen flex items-center justify-center p-4">
+    <!-- Background Pattern -->
+    <div class="absolute inset-0 opacity-10">
+        <div class="absolute inset-0" style="background-image: url('data:image/svg+xml,<svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"><g fill="none" fill-rule="evenodd"><g fill="%23ffffff" fill-opacity="0.1"><circle cx="30" cy="30" r="2"/></g></svg>');"></div>
+    </div>
+
+    <!-- Registration Form Container -->
+    <div class="w-full max-w-md relative z-10">
+        <!-- Header -->
+        <div class="text-center mb-8 animate-fade-in">
+            <div class="mx-auto w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-lg">
+                <i class="fas fa-user-plus text-2xl text-indigo-600"></i>
+            </div>
+            <h1 class="text-3xl font-bold text-white mb-2">Create Account</h1>
+            <p class="text-indigo-100">Join our secure platform today</p>
+        </div>
+
+        <!-- Registration Form -->
+        <div class="glass-effect rounded-2xl p-8 shadow-2xl animate-slide-up">
+            <form id="registrationForm" class="space-y-6">
+                <!-- Name Fields -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-floating">
+                        <input type="text" id="firstName" name="firstName" placeholder=" " 
+                               class="w-full px-3 pt-6 pb-2 bg-white bg-opacity-20 border border-white border-opacity-30 rounded-lg text-white placeholder-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               required>
+                        <label for="firstName" class="text-white">First Name</label>
+                        <div class="invalid-feedback text-red-300 text-sm mt-1 hidden"></div>
+                    </div>
+                    
+                    <div class="form-floating">
+                        <input type="text" id="lastName" name="lastName" placeholder=" " 
+                               class="w-full px-3 pt-6 pb-2 bg-white bg-opacity-20 border border-white border-opacity-30 rounded-lg text-white placeholder-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               required>
+                        <label for="lastName" class="text-white">Last Name</label>
+                        <div class="invalid-feedback text-red-300 text-sm mt-1 hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Email Field -->
+                <div class="form-floating">
+                    <input type="email" id="email" name="email" placeholder=" " 
+                           class="w-full px-3 pt-6 pb-2 bg-white bg-opacity-20 border border-white border-opacity-30 rounded-lg text-white placeholder-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                           required>
+                    <label for="email" class="text-white">Email Address</label>
+                    <div class="invalid-feedback text-red-300 text-sm mt-1 hidden"></div>
+                </div>
+
+                <!-- Mobile Number Field -->
+                <div class="form-floating">
+                    <input type="tel" id="mobile" name="mobile" placeholder=" " 
+                           class="w-full px-3 pt-6 pb-2 bg-white bg-opacity-20 border border-white border-opacity-30 rounded-lg text-white placeholder-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                           pattern="[0-9]{10}" 
+                           title="Please enter a 10-digit mobile number"
+                           required>
+                    <label for="mobile" class="text-white">Mobile Number</label>
+                    <div class="invalid-feedback text-red-300 text-sm mt-1 hidden"></div>
+                    <div class="text-xs text-indigo-200 mt-1">Enter 10-digit mobile number</div>
+                </div>
+
+                <!-- Password Fields -->
+                <div class="space-y-4">
+                    <div class="form-floating">
+                        <input type="password" id="password" name="password" placeholder=" " 
+                               class="w-full px-3 pt-6 pb-2 bg-white bg-opacity-20 border border-white border-opacity-30 rounded-lg text-white placeholder-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               required minlength="8">
+                        <label for="password" class="text-white">Password</label>
+                        <div class="invalid-feedback text-red-300 text-sm mt-1 hidden"></div>
+                        
+                        <!-- Password Strength Meter -->
+                        <div class="mt-2">
+                            <div class="flex justify-between text-xs text-indigo-200 mb-1">
+                                <span>Password Strength</span>
+                                <span id="strengthText">Weak</span>
+                            </div>
+                            <div class="w-full bg-white bg-opacity-20 rounded-full h-1">
+                                <div id="strengthMeter" class="strength-meter bg-gray-400"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-floating">
+                        <input type="password" id="confirmPassword" name="confirmPassword" placeholder=" " 
+                               class="w-full px-3 pt-6 pb-2 bg-white bg-opacity-20 border border-white border-opacity-30 rounded-lg text-white placeholder-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               required>
+                        <label for="confirmPassword" class="text-white">Confirm Password</label>
+                        <div class="invalid-feedback text-red-300 text-sm mt-1 hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Terms and Conditions -->
+                <div class="flex items-start">
+                    <input type="checkbox" id="terms" name="terms" 
+                           class="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                           required>
+                    <label for="terms" class="ml-2 text-sm text-indigo-200">
+                        I agree to the <a href="#" class="text-white underline hover:text-indigo-100">Terms of Service</a> 
+                        and <a href="#" class="text-white underline hover:text-indigo-100">Privacy Policy</a>
+                    </label>
+                </div>
+
+                <!-- Submit Button -->
+                <button type="submit" id="submitBtn" 
+                        class="w-full bg-white text-indigo-600 py-3 px-4 rounded-lg font-semibold hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200 transform hover:scale-105">
+                    <span id="submitText">Create Account</span>
+                    <i id="submitSpinner" class="fas fa-spinner fa-spin ml-2 hidden"></i>
+                </button>
+
+                <!-- Login Link -->
+                <div class="text-center">
+                    <p class="text-indigo-200">
+                        Already have an account? 
+                        <a href="/login" class="text-white font-semibold hover:text-indigo-100 underline">
+                            Sign in here
+                        </a>
+                    </p>
+                </div>
+            </form>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center mt-8 text-indigo-200 text-sm animate-fade-in">
+            <p>&copy; 2025 RBAC Management System. All rights reserved.</p>
+        </div>
+    </div>
+
+    <!-- Success/Error Messages -->
+    <div id="messageContainer" class="fixed top-5 right-5 z-50 space-y-2">
+        <!-- Messages will be dynamically added here -->
+    </div>
+
+    <script>
+        // ================================
+        // REGISTRATION FORM HANDLER
+        // ================================
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('registrationForm');
+            const passwordInput = document.getElementById('password');
+            const confirmPasswordInput = document.getElementById('confirmPassword');
+            const mobileInput = document.getElementById('mobile');
+            
+            // Password strength checking
+            passwordInput.addEventListener('input', checkPasswordStrength);
+            
+            // Mobile number formatting
+            mobileInput.addEventListener('input', formatMobileNumber);
+            
+            // Form submission
+            form.addEventListener('submit', handleFormSubmit);
+            
+            // Real-time validation
+            form.querySelectorAll('input').forEach(input => {
+                input.addEventListener('blur', validateField);
+                input.addEventListener('input', clearFieldError);
+            });
+        });
+        
+        function checkPasswordStrength(event) {
+            const password = event.target.value;
+            const strengthMeter = document.getElementById('strengthMeter');
+            const strengthText = document.getElementById('strengthText');
+            
+            let strength = 0;
+            let text = 'Weak';
+            let className = 'strength-weak';
+            
+            // Check password criteria
+            if (password.length >= 8) strength++;
+            if (/[A-Z]/.test(password)) strength++;
+            if (/[a-z]/.test(password)) strength++;
+            if (/[0-9]/.test(password)) strength++;
+            if (/[^A-Za-z0-9]/.test(password)) strength++;
+            
+            // Set strength level
+            if (strength >= 4) {
+                text = 'Strong';
+                className = 'strength-strong';
+            } else if (strength >= 3) {
+                text = 'Good';
+                className = 'strength-good';
+            } else if (strength >= 2) {
+                text = 'Fair';
+                className = 'strength-fair';
+            }
+            
+            strengthMeter.className = `strength-meter ${className}`;
+            strengthText.textContent = text;
+        }
+        
+        function formatMobileNumber(event) {
+            let value = event.target.value.replace(/\D/g, '');
+            if (value.length > 10) {
+                value = value.slice(0, 10);
+            }
+            event.target.value = value;
+        }
+        
+        function validateField(event) {
+            const field = event.target;
+            const value = field.value.trim();
+            
+            clearFieldError(event);
+            
+            switch (field.type) {
+                case 'email':
+                    if (value && !isValidEmail(value)) {
+                        showFieldError(field, 'Please enter a valid email address');
+                    }
+                    break;
+                case 'tel':
+                    if (value && !/^\d{10}$/.test(value)) {
+                        showFieldError(field, 'Please enter a valid 10-digit mobile number');
+                    }
+                    break;
+                case 'password':
+                    if (field.id === 'confirmPassword') {
+                        const password = document.getElementById('password').value;
+                        if (value && value !== password) {
+                            showFieldError(field, 'Passwords do not match');
+                        }
+                    } else if (value && value.length < 8) {
+                        showFieldError(field, 'Password must be at least 8 characters long');
+                    }
+                    break;
+            }
+        }
+        
+        function clearFieldError(event) {
+            const field = event.target;
+            const errorDiv = field.parentNode.querySelector('.invalid-feedback');
+            field.classList.remove('border-red-500');
+            errorDiv.classList.add('hidden');
+        }
+        
+        function showFieldError(field, message) {
+            const errorDiv = field.parentNode.querySelector('.invalid-feedback');
+            field.classList.add('border-red-500');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+        }
+        
+        function isValidEmail(email) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return emailRegex.test(email);
+        }
+        
+        async function handleFormSubmit(event) {
+            event.preventDefault();
+            
+            const formData = new FormData(event.target);
+            const data = Object.fromEntries(formData.entries());
+            
+            // Validate form
+            if (!validateForm(data)) {
+                return;
+            }
+            
+            setSubmitLoading(true);
+            
+            try {
+                const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        first_name: data.firstName,
+                        last_name: data.lastName,
+                        email: data.email,
+                        mobile: data.mobile,
+                        password: data.password
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showMessage('Account created successfully! Redirecting to login...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/login?registered=true';
+                    }, 2000);
+                } else {
+                    throw new Error(result.error || 'Registration failed');
+                }
+                
+            } catch (error) {
+                console.error('Registration error:', error);
+                showMessage(error.message || 'Registration failed. Please try again.', 'error');
+            } finally {
+                setSubmitLoading(false);
+            }
+        }
+        
+        function validateForm(data) {
+            let isValid = true;
+            
+            // Check required fields
+            const requiredFields = ['firstName', 'lastName', 'email', 'mobile', 'password', 'confirmPassword'];
+            requiredFields.forEach(fieldName => {
+                if (!data[fieldName] || !data[fieldName].trim()) {
+                    const field = document.getElementById(fieldName);
+                    showFieldError(field, 'This field is required');
+                    isValid = false;
+                }
+            });
+            
+            // Validate email
+            if (data.email && !isValidEmail(data.email)) {
+                showFieldError(document.getElementById('email'), 'Please enter a valid email address');
+                isValid = false;
+            }
+            
+            // Validate mobile
+            if (data.mobile && !/^\d{10}$/.test(data.mobile)) {
+                showFieldError(document.getElementById('mobile'), 'Please enter a valid 10-digit mobile number');
+                isValid = false;
+            }
+            
+            // Validate password
+            if (data.password && data.password.length < 8) {
+                showFieldError(document.getElementById('password'), 'Password must be at least 8 characters long');
+                isValid = false;
+            }
+            
+            // Validate password confirmation
+            if (data.password !== data.confirmPassword) {
+                showFieldError(document.getElementById('confirmPassword'), 'Passwords do not match');
+                isValid = false;
+            }
+            
+            // Check terms acceptance
+            if (!data.terms) {
+                showMessage('Please accept the Terms of Service and Privacy Policy', 'error');
+                isValid = false;
+            }
+            
+            return isValid;
+        }
+        
+        function setSubmitLoading(loading) {
+            const submitBtn = document.getElementById('submitBtn');
+            const submitText = document.getElementById('submitText');
+            const submitSpinner = document.getElementById('submitSpinner');
+            
+            submitBtn.disabled = loading;
+            
+            if (loading) {
+                submitText.textContent = 'Creating Account...';
+                submitSpinner.classList.remove('hidden');
+                submitBtn.classList.add('opacity-75');
+            } else {
+                submitText.textContent = 'Create Account';
+                submitSpinner.classList.add('hidden');
+                submitBtn.classList.remove('opacity-75');
+            }
+        }
+        
+        function showMessage(message, type = 'info') {
+            const container = document.getElementById('messageContainer');
+            const messageDiv = document.createElement('div');
+            
+            const bgColor = type === 'success' ? 'bg-green-500' : 
+                           type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+            
+            messageDiv.className = `${bgColor} text-white px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 translate-x-full opacity-0`;
+            messageDiv.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <span>${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-white hover:text-gray-200">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            
+            container.appendChild(messageDiv);
+            
+            // Animate in
+            setTimeout(() => {
+                messageDiv.classList.remove('translate-x-full', 'opacity-0');
+            }, 100);
+            
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                if (messageDiv.parentNode) {
+                    messageDiv.classList.add('translate-x-full', 'opacity-0');
+                    setTimeout(() => messageDiv.remove(), 300);
+                }
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

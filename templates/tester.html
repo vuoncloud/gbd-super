@@ -1,0 +1,685 @@
+{% extends "base_enhanced_rbac.html" %}
+
+{% block title %}Device Tester{% endblock %}
+{% block page_title %}Device Tester{% endblock %}
+{% block page_description %}Test and control your devices{% endblock %}
+
+{% block styles %}
+<style>
+    .device-type-card {
+        transition: all 0.3s ease;
+        border: 2px solid transparent;
+    }
+    .device-type-card:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    .device-type-card.selected {
+        border-color: #4F46E5;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    .command-section {
+        border-left: 3px solid #E5E7EB;
+        transition: border-color 0.3s ease;
+    }
+    .command-section.active {
+        border-left-color: #4F46E5;
+        background-color: #F8FAFC;
+    }
+    .log-entry {
+        animation: slideIn 0.3s ease-out;
+    }
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateY(-5px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .response-success { 
+        background: linear-gradient(90deg, #10B981, #059669); 
+        color: white; 
+    }
+    .response-failure { 
+        background: linear-gradient(90deg, #EF4444, #DC2626); 
+        color: white; 
+    }
+    .compact-input {
+        @apply px-2 py-1 text-sm;
+    }
+    .compact-button {
+        @apply px-3 py-1 text-sm font-medium;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header Section -->
+    <div class="bg-white rounded-xl shadow-lg p-6">
+        <h1 class="text-2xl font-bold text-gray-800 mb-2">Device Command Tester</h1>
+        <p class="text-gray-600">Send commands to EMS-4R and AMS-3S2R devices remotely</p>
+        
+        <!-- Status Indicators -->
+        <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-blue-50 rounded-lg p-3">
+                <div class="flex items-center">
+                    <i class="fas fa-server text-blue-600 mr-2"></i>
+                    <span class="text-sm font-medium">System Status: <span class="text-green-600">Online</span></span>
+                </div>
+            </div>
+            <div class="bg-green-50 rounded-lg p-3">
+                <div class="flex items-center">
+                    <i class="fas fa-wifi text-green-600 mr-2"></i>
+                    <span class="text-sm font-medium">Connection: <span class="text-green-600">Ready</span></span>
+                </div>
+            </div>
+            <div class="bg-purple-50 rounded-lg p-3">
+                <div class="flex items-center">
+                    <i class="fas fa-shield-alt text-purple-600 mr-2"></i>
+                    <span class="text-sm font-medium">RBAC: <span class="text-purple-600">Active</span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Device Type Selection -->
+    <div class="bg-white rounded-xl shadow-lg p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">1. Select Device Type</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="device-type-card bg-gradient-to-br from-blue-50 to-indigo-100 p-6 rounded-lg cursor-pointer" 
+                 onclick="selectDeviceType('EMS-4R')">
+                <div class="flex items-center space-x-4">
+                    <div class="bg-blue-500 text-white rounded-full p-3">
+                        <i class="fas fa-microchip text-2xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-800">EMS-4R</h3>
+                        <p class="text-sm text-gray-600">4-Relay Energy Management</p>
+                        <ul class="text-sm text-gray-500 mt-2">
+                            <li>• 4 Independent Relays</li>
+                            <li>• Schedule Management</li>
+                            <li>• Remote Configuration</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="device-type-card bg-gradient-to-br from-green-50 to-emerald-100 p-6 rounded-lg cursor-pointer" 
+                 onclick="selectDeviceType('AMS-3S2R')">
+                <div class="flex items-center space-x-4">
+                    <div class="bg-green-500 text-white rounded-full p-3">
+                        <i class="fas fa-shield-alt text-2xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-800">AMS-3S2R</h3>
+                        <p class="text-sm text-gray-600">3-Sensor 2-Relay Alarm</p>
+                        <ul class="text-sm text-gray-500 mt-2">
+                            <li>• 3 Sensor Inputs</li>
+                            <li>• 2 Relay Outputs</li>
+                            <li>• Alarm & Siren Control</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="device-type-indicator" class="mt-6 p-4 rounded-lg bg-indigo-50 text-center hidden">
+            <span class="text-indigo-800">Selected Device Type: </span>
+            <span id="selected-device-type" class="font-bold text-indigo-900"></span>
+        </div>
+    </div>
+
+    <!-- Target Device Selection -->
+    <div id="target-section" class="bg-white rounded-xl shadow-lg p-6 hidden">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">2. Target Device Selection</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Device Selection Method</label>
+                <select id="selection-method" onchange="updateSelectionMethod()" class="w-full border-gray-300 rounded-lg p-3">
+                    <option value="manual">Manual Entry</option>
+                    <option value="from-list">Select from List</option>
+                </select>
+            </div>
+            <div id="device-count-display" class="flex items-center justify-center">
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-blue-600" id="target-count">0</div>
+                    <div class="text-sm text-gray-500">Target Devices</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Manual Entry -->
+        <div id="manual-entry" class="mt-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Device IDs (comma-separated)</label>
+            <textarea id="device-targets" rows="3" 
+                      class="w-full border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      placeholder="Examples:&#10;Single: DEVICE_001&#10;Multiple: DEVICE_001, DEVICE_002, DEVICE_003&#10;Range: DEVICE_001-DEVICE_005"
+                      oninput="updateTargetCount()"></textarea>
+            <p class="mt-2 text-sm text-gray-500">
+                <strong>Supported formats:</strong> Single device, comma-separated list, or ranges (e.g., DEVICE_001-DEVICE_005)
+            </p>
+        </div>
+        
+        <!-- Device List Selection -->
+        <div id="list-selection" class="mt-4 hidden">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Available Devices</label>
+            <div class="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto">
+                <div class="text-gray-500 text-center py-4">
+                    <button onclick="loadAvailableDevices()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+                        Load Available Devices
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Command Interface -->
+    <div id="command-section" class="grid grid-cols-1 lg:grid-cols-2 gap-6 hidden">
+        <!-- Commands Panel -->
+        <div class="bg-white rounded-xl shadow-lg">
+            <div class="p-6 border-b border-gray-200">
+                <h2 class="text-xl font-semibold text-gray-800">3. Device Commands</h2>
+                <p class="text-sm text-gray-600 mt-1">Select and configure commands to send</p>
+            </div>
+            
+            <div id="command-content" class="p-6">
+                <!-- EMS-4R Commands -->
+                <div id="ems-commands" class="space-y-6 hidden">
+                    <!-- Relay Control -->
+                    <div class="command-section p-4 rounded-lg bg-gray-50">
+                        <h3 class="text-lg font-medium text-gray-800 mb-3">
+                            <i class="fas fa-bolt text-yellow-500 mr-2"></i>Relay Control
+                        </h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Relay Number</label>
+                                <select id="ems-relay-number" class="w-full border-gray-300 rounded-md p-2">
+                                    <option value="1">Relay 1</option>
+                                    <option value="2">Relay 2</option>
+                                    <option value="3">Relay 3</option>
+                                    <option value="4">Relay 4</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Action</label>
+                                <select id="ems-relay-action" class="w-full border-gray-300 rounded-md p-2">
+                                    <option value="ON">Turn ON</option>
+                                    <option value="OFF">Turn OFF</option>
+                                    <option value="TOGGLE">Toggle</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Duration (seconds, 0 = permanent)</label>
+                            <input type="number" id="ems-relay-duration" value="10" min="0" max="3600" 
+                                   class="w-full border-gray-300 rounded-md p-2">
+                        </div>
+                        <button onclick="sendEMSRelayCommand()" 
+                                class="mt-4 w-full bg-yellow-600 hover:bg-yellow-700 text-white font-medium py-2 px-4 rounded-lg">
+                            Send Relay Command
+                        </button>
+                    </div>
+
+                    <!-- Device Configuration -->
+                    <div class="command-section p-4 rounded-lg bg-gray-50">
+                        <h3 class="text-lg font-medium text-gray-800 mb-3">
+                            <i class="fas fa-cog text-blue-500 mr-2"></i>Device Configuration
+                        </h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">New Device ID</label>
+                                <input type="text" id="ems-new-device-id" placeholder="Enter new device ID" 
+                                       class="w-full border-gray-300 rounded-md p-2">
+                            </div>
+                            <button onclick="sendEMSConfigCommand()" 
+                                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg">
+                                Update Device ID
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- System Commands -->
+                    <div class="command-section p-4 rounded-lg bg-gray-50">
+                        <h3 class="text-lg font-medium text-gray-800 mb-3">
+                            <i class="fas fa-power-off text-red-500 mr-2"></i>System Commands
+                        </h3>
+                        <div class="space-y-3">
+                            <button onclick="sendEMSStatusRequest()" 
+                                    class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg">
+                                Request Status
+                            </button>
+                            <button onclick="sendEMSReboot()" 
+                                    class="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg">
+                                <i class="fas fa-exclamation-triangle mr-2"></i>Reboot Device
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AMS-3S2R Commands -->
+                <div id="ams-commands" class="space-y-6 hidden">
+                    <!-- Relay & Siren Control -->
+                    <div class="command-section p-4 rounded-lg bg-gray-50">
+                        <h3 class="text-lg font-medium text-gray-800 mb-3">
+                            <i class="fas fa-volume-up text-red-500 mr-2"></i>Relay & Siren Control
+                        </h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Control Type</label>
+                                <select id="ams-control-type" class="w-full border-gray-300 rounded-md p-2">
+                                    <option value="relay">Main Relay</option>
+                                    <option value="siren">Siren</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Action</label>
+                                <select id="ams-action" class="w-full border-gray-300 rounded-md p-2">
+                                    <option value="ON">Activate</option>
+                                    <option value="OFF">Deactivate</option>
+                                    <option value="TRIGGER">Trigger</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Duration (seconds)</label>
+                            <input type="number" id="ams-duration" value="10" min="1" max="300" 
+                                   class="w-full border-gray-300 rounded-md p-2">
+                        </div>
+                        <button onclick="sendAMSControlCommand()" 
+                                class="mt-4 w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg">
+                            Send Control Command
+                        </button>
+                    </div>
+
+                    <!-- Sensor Configuration -->
+                    <div class="command-section p-4 rounded-lg bg-gray-50">
+                        <h3 class="text-lg font-medium text-gray-800 mb-3">
+                            <i class="fas fa-eye text-green-500 mr-2"></i>Sensor Configuration
+                        </h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Sensor</label>
+                                <select id="ams-sensor" class="w-full border-gray-300 rounded-md p-2">
+                                    <option value="1">Reed Switch</option>
+                                    <option value="2">Button</option>
+                                    <option value="3">PIR Motion</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Mode</label>
+                                <select id="ams-sensor-mode" class="w-full border-gray-300 rounded-md p-2">
+                                    <option value="ENABLED">Enabled</option>
+                                    <option value="DISABLED">Disabled</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button onclick="sendAMSSensorConfig()" 
+                                class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg">
+                            Configure Sensor
+                        </button>
+                    </div>
+
+                    <!-- System Commands -->
+                    <div class="command-section p-4 rounded-lg bg-gray-50">
+                        <h3 class="text-lg font-medium text-gray-800 mb-3">
+                            <i class="fas fa-power-off text-red-500 mr-2"></i>System Commands
+                        </h3>
+                        <div class="space-y-3">
+                            <button onclick="sendAMSStatusRequest()" 
+                                    class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg">
+                                Request Status
+                            </button>
+                            <button onclick="sendAMSReboot()" 
+                                    class="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg">
+                                <i class="fas fa-exclamation-triangle mr-2"></i>Reboot Device
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Response Monitor -->
+        <div class="bg-white rounded-xl shadow-lg">
+            <div class="p-6 border-b border-gray-200">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-xl font-semibold text-gray-800">Command Log & Responses</h2>
+                    <div class="space-x-2">
+                        <button onclick="clearLog()" class="compact-button bg-gray-500 hover:bg-gray-600 text-white rounded-lg">
+                            Clear Log
+                        </button>
+                        <button onclick="exportLog()" class="compact-button bg-blue-500 hover:bg-blue-600 text-white rounded-lg">
+                            Export
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="command-log" class="p-4 h-96 overflow-y-auto bg-gray-50 font-mono text-sm">
+                <div class="text-gray-500 text-center py-8">
+                    <i class="fas fa-terminal text-2xl mb-2"></i>
+                    <p>Command responses will appear here</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Global variables
+    let currentDeviceType = null;
+    let targetDevices = [];
+    let commandLog = [];
+
+    // Initialize page
+    document.addEventListener('DOMContentLoaded', function() {
+        addLogEntry('Device Tester initialized', 'info');
+        addLogEntry(`Current user: ${goldboxUtils.currentUser.name} (${goldboxUtils.currentUser.role})`, 'info');
+    });
+
+    // Device type selection
+    function selectDeviceType(deviceType) {
+        currentDeviceType = deviceType;
+        
+        // Update UI
+        document.querySelectorAll('.device-type-card').forEach(card => {
+            card.classList.remove('selected');
+        });
+        event.currentTarget.classList.add('selected');
+        
+        // Show indicator
+        document.getElementById('device-type-indicator').classList.remove('hidden');
+        document.getElementById('selected-device-type').textContent = deviceType;
+        
+        // Show next sections
+        document.getElementById('target-section').classList.remove('hidden');
+        
+        // Show appropriate commands
+        document.getElementById('ems-commands').classList.toggle('hidden', deviceType !== 'EMS-4R');
+        document.getElementById('ams-commands').classList.toggle('hidden', deviceType !== 'AMS-3S2R');
+        
+        addLogEntry(`Selected device type: ${deviceType}`, 'info');
+    }
+
+    // Target device management
+    function updateSelectionMethod() {
+        const method = document.getElementById('selection-method').value;
+        document.getElementById('manual-entry').classList.toggle('hidden', method !== 'manual');
+        document.getElementById('list-selection').classList.toggle('hidden', method !== 'from-list');
+        updateTargetCount();
+    }
+
+    function updateTargetCount() {
+        const targets = document.getElementById('device-targets').value.trim();
+        let count = 0;
+        
+        if (targets) {
+            // Simple count - split by comma
+            const devices = targets.split(',').map(d => d.trim()).filter(d => d);
+            count = devices.length;
+        }
+        
+        document.getElementById('target-count').textContent = count;
+        
+        // Show command section if we have targets
+        if (count > 0 && currentDeviceType) {
+            document.getElementById('command-section').classList.remove('hidden');
+        }
+    }
+
+    async function loadAvailableDevices() {
+        try {
+            const response = await goldboxUtils.secureApiCall('/api/project/1/devices');
+            if (response) {
+                const devices = await response.json();
+                
+                const container = document.querySelector('#list-selection .border');
+                container.innerHTML = '';
+                
+                if (devices.length === 0) {
+                    container.innerHTML = '<div class="text-gray-500 text-center py-4">No devices found</div>';
+                    return;
+                }
+                
+                devices.forEach(device => {
+                    const item = document.createElement('div');
+                    item.className = 'flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded';
+                    item.innerHTML = `
+                        <input type="checkbox" class="mr-3" value="${device.device_id}" onchange="updateSelectedDevices()">
+                        <div class="flex-1">
+                            <div class="font-medium">${device.device_id}</div>
+                            <div class="text-sm text-gray-500">${device.mac_address}</div>
+                        </div>
+                        <div class="text-xs text-gray-400">${device.last_seen ? 'Online' : 'Offline'}</div>
+                    `;
+                    container.appendChild(item);
+                });
+                
+                addLogEntry(`Loaded ${devices.length} available devices`, 'success');
+            }
+        } catch (error) {
+            addLogEntry(`Error loading devices: ${error.message}`, 'error');
+        }
+    }
+
+    function updateSelectedDevices() {
+        const checkboxes = document.querySelectorAll('#list-selection input[type="checkbox"]:checked');
+        const selected = Array.from(checkboxes).map(cb => cb.value);
+        document.getElementById('device-targets').value = selected.join(', ');
+        updateTargetCount();
+    }
+
+    // Command functions
+    function sendEMSRelayCommand() {
+        const relay = document.getElementById('ems-relay-number').value;
+        const action = document.getElementById('ems-relay-action').value;
+        const duration = document.getElementById('ems-relay-duration').value;
+        
+        const command = {
+            type: 'relay_control',
+            relay: relay,
+            action: action,
+            duration: duration
+        };
+        
+        sendCommand('EMS-4R Relay Control', command);
+    }
+
+    function sendEMSConfigCommand() {
+        const newId = document.getElementById('ems-new-device-id').value.trim();
+        if (!newId) {
+            addLogEntry('Please enter a new device ID', 'error');
+            return;
+        }
+        
+        const command = {
+            type: 'config_update',
+            new_device_id: newId
+        };
+        
+        sendCommand('EMS-4R Configuration', command);
+    }
+
+    function sendEMSStatusRequest() {
+        const command = {
+            type: 'status_request'
+        };
+        
+        sendCommand('EMS-4R Status Request', command);
+    }
+
+    function sendEMSReboot() {
+        if (confirm('Are you sure you want to reboot the selected devices?')) {
+            const command = {
+                type: 'system_reboot'
+            };
+            
+            sendCommand('EMS-4R Reboot', command);
+        }
+    }
+
+    function sendAMSControlCommand() {
+        const controlType = document.getElementById('ams-control-type').value;
+        const action = document.getElementById('ams-action').value;
+        const duration = document.getElementById('ams-duration').value;
+        
+        const command = {
+            type: `${controlType}_control`,
+            action: action,
+            duration: duration
+        };
+        
+        sendCommand(`AMS-3S2R ${controlType.toUpperCase()} Control`, command);
+    }
+
+    function sendAMSSensorConfig() {
+        const sensor = document.getElementById('ams-sensor').value;
+        const mode = document.getElementById('ams-sensor-mode').value;
+        
+        const command = {
+            type: 'sensor_config',
+            sensor: sensor,
+            mode: mode
+        };
+        
+        sendCommand('AMS-3S2R Sensor Config', command);
+    }
+
+    function sendAMSStatusRequest() {
+        const command = {
+            type: 'status_request'
+        };
+        
+        sendCommand('AMS-3S2R Status Request', command);
+    }
+
+    function sendAMSReboot() {
+        if (confirm('Are you sure you want to reboot the selected devices?')) {
+            const command = {
+                type: 'system_reboot'
+            };
+            
+            sendCommand('AMS-3S2R Reboot', command);
+        }
+    }
+
+    // Core command sending (simulated for now)
+    function sendCommand(commandName, commandData) {
+        const targets = document.getElementById('device-targets').value.trim();
+        
+        if (!targets) {
+            addLogEntry('Please specify target devices', 'error');
+            return;
+        }
+
+        if (!currentDeviceType) {
+            addLogEntry('Please select a device type', 'error');
+            return;
+        }
+
+        const timestamp = new Date().toLocaleTimeString();
+        const targetCount = targets.split(',').length;
+        
+        addLogEntry(`[${timestamp}] Sending ${commandName} to ${targetCount} device(s)`, 'sent');
+        addLogEntry(`Command Data: ${JSON.stringify(commandData)}`, 'data');
+        addLogEntry(`Targets: ${targets}`, 'data');
+        
+        // Simulate command processing
+        setTimeout(() => {
+            simulateCommandResponse(commandName, targetCount);
+        }, 1000 + Math.random() * 2000);
+    }
+
+    // Simulate command responses
+    function simulateCommandResponse(commandName, targetCount) {
+        const timestamp = new Date().toLocaleTimeString();
+        const success = Math.random() > 0.2; // 80% success rate
+        
+        if (success) {
+            addLogEntry(`[${timestamp}] ${commandName} completed successfully on ${targetCount} device(s)`, 'success');
+        } else {
+            addLogEntry(`[${timestamp}] ${commandName} failed on some devices`, 'error');
+        }
+    }
+
+    // Logging functions
+    function addLogEntry(message, type = 'info') {
+        const timestamp = new Date().toLocaleTimeString();
+        const logContainer = document.getElementById('command-log');
+        
+        // Remove placeholder if present
+        const placeholder = logContainer.querySelector('.text-gray-500.text-center');
+        if (placeholder) {
+            placeholder.remove();
+        }
+        
+        const logEntry = document.createElement('div');
+        logEntry.className = `log-entry p-2 mb-1 rounded ${getLogClass(type)}`;
+        logEntry.innerHTML = `<span class="opacity-70">[${timestamp}]</span> ${escapeHtml(message)}`;
+        
+        logContainer.appendChild(logEntry);
+        logContainer.scrollTop = logContainer.scrollHeight;
+        
+        // Store in memory for export
+        commandLog.push({
+            timestamp: new Date(),
+            message: message,
+            type: type
+        });
+    }
+
+    function getLogClass(type) {
+        const classes = {
+            'info': 'bg-blue-50 text-blue-800 border-l-2 border-blue-400',
+            'success': 'bg-green-50 text-green-800 border-l-2 border-green-400',
+            'error': 'bg-red-50 text-red-800 border-l-2 border-red-400',
+            'warning': 'bg-yellow-50 text-yellow-800 border-l-2 border-yellow-400',
+            'sent': 'bg-indigo-50 text-indigo-800 border-l-2 border-indigo-400',
+            'data': 'bg-gray-50 text-gray-700 border-l-2 border-gray-400'
+        };
+        return classes[type] || classes['info'];
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function clearLog() {
+        const logContainer = document.getElementById('command-log');
+        logContainer.innerHTML = `
+            <div class="text-gray-500 text-center py-8">
+                <i class="fas fa-terminal text-2xl mb-2"></i>
+                <p>Command responses will appear here</p>
+            </div>
+        `;
+        commandLog = [];
+        addLogEntry('Command log cleared', 'info');
+    }
+
+    function exportLog() {
+        if (commandLog.length === 0) {
+            addLogEntry('No log entries to export', 'warning');
+            return;
+        }
+        
+        const logText = commandLog.map(entry => 
+            `[${entry.timestamp.toISOString()}] [${entry.type.toUpperCase()}] ${entry.message}`
+        ).join('\n');
+        
+        const blob = new Blob([logText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `device-tester-log-${new Date().toISOString().slice(0, 10)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        addLogEntry('Log exported successfully', 'success');
+    }
+</script>
+{% endblock %}

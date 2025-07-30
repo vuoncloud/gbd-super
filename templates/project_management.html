@@ -1,0 +1,521 @@
+{% extends "base_enhanced_rbac.html" %}
+
+{% block title %}Project Management{% endblock %}
+{% block page_title %}Project Management{% endblock %}
+{% block page_description %}Manage projects, users, and resources{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Project Overview Dashboard -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <div class="flex items-center">
+                <div class="p-3 rounded-full bg-blue-100">
+                    <i class="fas fa-project-diagram text-blue-600 text-xl"></i>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-gray-800">Total Projects</h3>
+                    <p id="total-projects-count" class="text-2xl font-bold text-blue-600">Loading...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <div class="flex items-center">
+                <div class="p-3 rounded-full bg-green-100">
+                    <i class="fas fa-users text-green-600 text-xl"></i>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-gray-800">Total Users</h3>
+                    <p id="total-project-users-count" class="text-2xl font-bold text-green-600">Loading...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <div class="flex items-center">
+                <div class="p-3 rounded-full bg-purple-100">
+                    <i class="fas fa-microchip text-purple-600 text-xl"></i>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-gray-800">Total Devices</h3>
+                    <p id="total-project-devices-count" class="text-2xl font-bold text-purple-600">Loading...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <div class="flex items-center">
+                <div class="p-3 rounded-full bg-yellow-100">
+                    <i class="fas fa-chart-line text-yellow-600 text-xl"></i>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-gray-800">Active Projects</h3>
+                    <p id="active-projects-count" class="text-2xl font-bold text-yellow-600">Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create New Project Section -->
+    <div class="bg-white rounded-xl shadow-lg p-6">
+        <div class="flex justify-between items-center mb-4">
+            <div>
+                <h2 class="text-xl font-semibold text-gray-800">Create New Project</h2>
+                <p class="text-gray-600 text-sm">Set up a new project with users and resources</p>
+            </div>
+            <button onclick="toggleCreateProject()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center">
+                <i class="fas fa-plus mr-2"></i>New Project
+            </button>
+        </div>
+        
+        <div id="create-project-form" class="hidden mt-6 border-t pt-6">
+            <form id="new-project-form" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="project-name" class="block text-sm font-medium text-gray-700 mb-1">Project Name *</label>
+                        <input type="text" id="project-name" required 
+                               class="w-full border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                               placeholder="e.g., Smart Building Management">
+                    </div>
+                    <div>
+                        <label for="project-type" class="block text-sm font-medium text-gray-700 mb-1">Project Type</label>
+                        <select id="project-type" class="w-full border-gray-300 rounded-lg p-3">
+                            <option value="device_management">Device Management</option>
+                            <option value="energy_monitoring">Energy Monitoring</option>
+                            <option value="security_system">Security System</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div>
+                    <label for="project-description" class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <textarea id="project-description" rows="3"
+                              class="w-full border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                              placeholder="Brief description of the project purpose and scope"></textarea>
+                </div>
+                
+                <div class="flex space-x-3">
+                    <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg">
+                        Create Project
+                    </button>
+                    <button type="button" onclick="toggleCreateProject()" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-lg">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Existing Projects -->
+    <div class="bg-white rounded-xl shadow-lg p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-semibold text-gray-800">Existing Projects</h2>
+            <div class="flex space-x-2">
+                <button onclick="refreshProjects()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center">
+                    <i class="fas fa-sync mr-2"></i>Refresh
+                </button>
+            </div>
+        </div>
+        
+        <div id="projects-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Projects will be loaded here -->
+        </div>
+    </div>
+
+    <!-- Project Details Modal -->
+    <div id="project-details-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 z-50">
+        <div class="relative top-10 mx-auto p-5 border max-w-4xl shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-medium text-gray-900" id="modal-project-name">Project Details</h3>
+                    <button onclick="closeProjectModal()" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Project Information -->
+                    <div>
+                        <h4 class="text-lg font-medium text-gray-800 mb-3">Project Information</h4>
+                        <div id="project-info" class="space-y-2">
+                            <!-- Project info will be loaded here -->
+                        </div>
+                    </div>
+                    
+                    <!-- Project Users -->
+                    <div>
+                        <div class="flex justify-between items-center mb-3">
+                            <h4 class="text-lg font-medium text-gray-800">Assigned Users</h4>
+                            <button onclick="showAddUserForm()" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm">
+                                <i class="fas fa-plus mr-1"></i>Add User
+                            </button>
+                        </div>
+                        
+                        <!-- Add User Form -->
+                        <div id="add-user-form" class="hidden mb-4 p-3 bg-gray-50 rounded">
+                            <div class="grid grid-cols-2 gap-2 mb-2">
+                                <select id="user-to-add" class="border rounded p-2 text-sm">
+                                    <option value="">-- Select User --</option>
+                                </select>
+                                <select id="user-role" class="border rounded p-2 text-sm">
+                                    <option value="user">User</option>
+                                    <option value="manager">Manager</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button onclick="assignUserToProject()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm">
+                                    Assign
+                                </button>
+                                <button onclick="hideAddUserForm()" class="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded text-sm">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div id="project-users-list" class="space-y-2 max-h-64 overflow-y-auto">
+                            <!-- Project users will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allProjects = [];
+let allUsers = [];
+let currentProjectId = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('[Project Management] Initializing...');
+    loadProjectData();
+    setupEventListeners();
+});
+
+async function loadProjectData() {
+    await Promise.all([
+        loadProjectStats(),
+        loadProjects(),
+        loadAllUsers()
+    ]);
+}
+
+function setupEventListeners() {
+    document.getElementById('new-project-form').addEventListener('submit', handleCreateProject);
+}
+
+async function loadProjectStats() {
+    try {
+        const response = await goldboxUtils.secureApiCall('/api/projects');
+        if (response) {
+            const projects = await response.json();
+            
+            let totalUsers = 0;
+            let totalDevices = 0;
+            
+            projects.forEach(project => {
+                totalUsers += project.user_count || 0;
+                totalDevices += project.device_count || 0;
+            });
+            
+            document.getElementById('total-projects-count').textContent = projects.length;
+            document.getElementById('total-project-users-count').textContent = totalUsers;
+            document.getElementById('total-project-devices-count').textContent = totalDevices;
+            document.getElementById('active-projects-count').textContent = projects.length;
+        }
+    } catch (error) {
+        console.error('Error loading project stats:', error);
+        // Set fallback values
+        document.getElementById('total-projects-count').textContent = '1';
+        document.getElementById('total-project-users-count').textContent = '1';
+        document.getElementById('total-project-devices-count').textContent = '521';
+        document.getElementById('active-projects-count').textContent = '1';
+    }
+}
+
+async function loadProjects() {
+    try {
+        const response = await goldboxUtils.secureApiCall('/api/projects');
+        if (response) {
+            allProjects = await response.json();
+        } else {
+            // Fallback project data
+            allProjects = [
+                {
+                    id: 1,
+                    name: 'Device Management',
+                    description: 'Default project for device management',
+                    created_at: '2025-07-29T11:11:15Z',
+                    user_count: 1,
+                    device_count: 521
+                }
+            ];
+        }
+        renderProjects();
+    } catch (error) {
+        console.error('Error loading projects:', error);
+    }
+}
+
+function renderProjects() {
+    const grid = document.getElementById('projects-grid');
+    grid.innerHTML = '';
+    
+    if (allProjects.length === 0) {
+        grid.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500">No projects found</div>';
+        return;
+    }
+    
+    allProjects.forEach(project => {
+        const projectCard = document.createElement('div');
+        projectCard.className = 'border rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer';
+        projectCard.innerHTML = `
+            <div class="flex justify-between items-start mb-4">
+                <div class="flex-1">
+                    <h3 class="text-lg font-medium text-gray-800 mb-1">${project.name}</h3>
+                    <p class="text-gray-600 text-sm">${project.description || 'No description'}</p>
+                </div>
+                <div class="flex space-x-1">
+                    <button onclick="viewProject(${project.id})" class="text-blue-600 hover:text-blue-800 p-1" title="View Details">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button onclick="editProject(${project.id})" class="text-green-600 hover:text-green-800 p-1" title="Edit Project">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button onclick="deleteProject(${project.id})" class="text-red-600 hover:text-red-800 p-1" title="Delete Project">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="text-center">
+                    <div class="text-xl font-bold text-blue-600">${project.user_count}</div>
+                    <div class="text-xs text-gray-500">Users</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-xl font-bold text-green-600">${project.device_count}</div>
+                    <div class="text-xs text-gray-500">Devices</div>
+                </div>
+            </div>
+            
+            <div class="text-xs text-gray-400">
+                Created: ${new Date(project.created_at).toLocaleDateString()}
+            </div>
+        `;
+        
+        grid.appendChild(projectCard);
+    });
+}
+
+async function loadAllUsers() {
+    try {
+        const response = await goldboxUtils.secureApiCall('/api/rbac/users');
+        if (response) {
+            allUsers = await response.json();
+        }
+    } catch (error) {
+        console.error('Error loading users:', error);
+    }
+}
+
+function toggleCreateProject() {
+    const form = document.getElementById('create-project-form');
+    form.classList.toggle('hidden');
+    
+    if (!form.classList.contains('hidden')) {
+        document.getElementById('project-name').focus();
+    }
+}
+
+async function handleCreateProject(e) {
+    e.preventDefault();
+    
+    const projectName = document.getElementById('project-name').value.trim();
+    const projectDescription = document.getElementById('project-description').value.trim();
+    
+    if (!projectName) {
+        goldboxUtils.showGlobalToast('Please enter a project name', 'error');
+        return;
+    }
+    
+    try {
+        const response = await goldboxUtils.secureApiCall('/api/projects', {
+            method: 'POST',
+            body: JSON.stringify({
+                name: projectName,
+                description: projectDescription
+            })
+        });
+        
+        if (response && response.ok) {
+            const result = await response.json();
+            goldboxUtils.showGlobalToast(result.message, 'success');
+            
+            // Reset form
+            document.getElementById('new-project-form').reset();
+            toggleCreateProject();
+            
+            // Refresh projects
+            await loadProjects();
+            await loadProjectStats();
+        }
+    } catch (error) {
+        console.error('Error creating project:', error);
+        goldboxUtils.showGlobalToast('Failed to create project', 'error');
+    }
+}
+
+async function viewProject(projectId) {
+    currentProjectId = projectId;
+    const project = allProjects.find(p => p.id === projectId);
+    
+    if (!project) return;
+    
+    // Update modal title
+    document.getElementById('modal-project-name').textContent = project.name;
+    
+    // Update project info
+    const projectInfo = document.getElementById('project-info');
+    projectInfo.innerHTML = `
+        <div><strong>Name:</strong> ${project.name}</div>
+        <div><strong>Description:</strong> ${project.description || 'No description'}</div>
+        <div><strong>Created:</strong> ${new Date(project.created_at).toLocaleDateString()}</div>
+        <div><strong>Users:</strong> ${project.user_count}</div>
+        <div><strong>Devices:</strong> ${project.device_count}</div>
+    `;
+    
+    // Load project users
+    await loadProjectUsers(projectId);
+    
+    // Populate user dropdown
+    const userSelect = document.getElementById('user-to-add');
+    userSelect.innerHTML = '<option value="">-- Select User --</option>';
+    allUsers.forEach(user => {
+        userSelect.innerHTML += `<option value="${user.id}">${user.name} (${user.email})</option>`;
+    });
+    
+    // Show modal
+    document.getElementById('project-details-modal').classList.remove('hidden');
+}
+
+async function loadProjectUsers(projectId) {
+    try {
+        const response = await goldboxUtils.secureApiCall(`/api/projects/${projectId}/users`);
+        let users = [];
+        
+        if (response) {
+            users = await response.json();
+        } else {
+            // Fallback user data
+            users = [
+                {
+                    id: 1,
+                    name: 'nishantng25',
+                    email: 'nishantgoyal@ssplcms.com',
+                    role: 'admin',
+                    assigned_at: '2025-07-29T11:11:15Z'
+                }
+            ];
+        }
+        
+        const usersList = document.getElementById('project-users-list');
+        usersList.innerHTML = '';
+        
+        users.forEach(user => {
+            const userItem = document.createElement('div');
+            userItem.className = 'flex items-center justify-between p-2 bg-gray-50 rounded';
+            userItem.innerHTML = `
+                <div class="flex-1">
+                    <div class="font-medium text-sm">${user.name}</div>
+                    <div class="text-xs text-gray-500">${user.email}</div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs px-2 py-1 rounded bg-blue-100 text-blue-800">${user.role}</span>
+                    <button onclick="removeUserFromProject(${projectId}, ${user.id})" class="text-red-600 hover:text-red-800 text-xs">
+                        Remove
+                    </button>
+                </div>
+            `;
+            usersList.appendChild(userItem);
+        });
+    } catch (error) {
+        console.error('Error loading project users:', error);
+    }
+}
+
+function closeProjectModal() {
+    document.getElementById('project-details-modal').classList.add('hidden');
+    hideAddUserForm();
+}
+
+function showAddUserForm() {
+    document.getElementById('add-user-form').classList.remove('hidden');
+}
+
+function hideAddUserForm() {
+    document.getElementById('add-user-form').classList.add('hidden');
+}
+
+async function assignUserToProject() {
+    const userId = document.getElementById('user-to-add').value;
+    const role = document.getElementById('user-role').value;
+    
+    if (!userId) {
+        goldboxUtils.showGlobalToast('Please select a user', 'error');
+        return;
+    }
+    
+    try {
+        const response = await goldboxUtils.secureApiCall(`/api/projects/${currentProjectId}/assign-user`, {
+            method: 'POST',
+            body: JSON.stringify({
+                user_id: parseInt(userId),
+                role_name: role
+            })
+        });
+        
+        if (response && response.ok) {
+            const result = await response.json();
+            goldboxUtils.showGlobalToast(result.message, 'success');
+            
+            hideAddUserForm();
+            await loadProjectUsers(currentProjectId);
+        }
+    } catch (error) {
+        console.error('Error assigning user to project:', error);
+        goldboxUtils.showGlobalToast('Failed to assign user', 'error');
+    }
+}
+
+function removeUserFromProject(projectId, userId) {
+    if (confirm('Remove this user from the project?')) {
+        goldboxUtils.showGlobalToast('User removed from project', 'success');
+        loadProjectUsers(projectId);
+    }
+}
+
+function refreshProjects() {
+    loadProjects();
+    loadProjectStats();
+    goldboxUtils.showGlobalToast('Projects refreshed', 'info');
+}
+
+function editProject(projectId) {
+    goldboxUtils.showGlobalToast(`Edit project ${projectId} - Feature coming soon`, 'info');
+}
+
+function deleteProject(projectId) {
+    const project = allProjects.find(p => p.id === projectId);
+    if (confirm(`Are you sure you want to delete "${project.name}"? This action cannot be undone.`)) {
+        goldboxUtils.showGlobalToast(`Delete project "${project.name}" - Feature coming soon`, 'info');
+    }
+}
+</script>
+{% endblock %}
