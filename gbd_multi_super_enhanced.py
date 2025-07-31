@@ -109,6 +109,49 @@ def requires_permission(permission_name: str):
         return decorated_function
     return decorator
 
+def api_key_or_login_required(f):
+    """Decorator that allows either API key authentication or login session"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check for API key first
+        api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
+        
+        if api_key:
+            # Simple API key validation - in production, store these securely
+            valid_api_keys = {
+                'gbd-super-admin-key-2025': 1,  # maps to user_id 1
+                'gbd-super-test-key': 1
+            }
+            
+            if api_key in valid_api_keys:
+                # Set up a mock user for API access
+                from flask import g
+                g.api_user_id = valid_api_keys[api_key]
+                g.api_authenticated = True
+                return f(*args, **kwargs)
+            else:
+                return jsonify({
+                    "error": "Invalid API key",
+                    "code": "INVALID_API_KEY"
+                }), 401
+        
+        # Fall back to regular login check
+        if current_user.is_authenticated:
+            g.api_authenticated = False
+            return f(*args, **kwargs)
+        
+        # For API endpoints, return JSON error instead of redirect
+        if request.path.startswith('/api/'):
+            return jsonify({
+                "error": "Authentication required",
+                "code": "AUTH_REQUIRED",
+                "message": "Provide X-API-Key header or login session"
+            }), 401
+        
+        return redirect(url_for('login'))
+    
+    return decorated_function
+
 
 # Enhanced User class
 
@@ -988,106 +1031,150 @@ def get_customers():
 # Add these routes to your gbd_multi_super_enhanced.py file
 
 @app.route('/api/rbac/stats', methods=['GET'])
-@login_required
+@api_key_or_login_required
 def get_rbac_stats():
     """Get RBAC system statistics"""
     conn = get_db_connection()
     if not conn:
-        return jsonify({"error": "Database connection failed"}), 500
+        log.error("[RBAC] Database connection failed for /api/rbac/stats")
+        return jsonify({
+            "users": 0,
+            "roles": 0, 
+            "permissions": 0,
+            "max_depth": 1,
+            "error": "Database connection failed",
+            "fallback": True
+        }), 200  # Return 200 with error info for graceful degradation
     
     try:
         with conn.cursor() as cursor:
-            # Count users
-            cursor.execute("SELECT COUNT(*) FROM users")
+            # Count users (exclude deleted)
+            cursor.execute("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL")
             user_count = cursor.fetchone()[0]
             
             # Count roles (from role_permissions table)
-            cursor.execute("SELECT COUNT(DISTINCT role_name) FROM role_permissions")
+            cursor.execute("SELECT COUNT(DISTINCT role_name) FROM role_permissions WHERE deleted_at IS NULL")
             role_count = cursor.fetchone()[0]
             
             # Count permissions
-            cursor.execute("SELECT COUNT(*) FROM permissions")
+            cursor.execute("SELECT COUNT(*) FROM permissions WHERE deleted_at IS NULL")
             permission_count = cursor.fetchone()[0]
             
             # Calculate max hierarchy depth
             cursor.execute("""
                 WITH RECURSIVE hierarchy AS (
-                    SELECT id, parent_id, 1 as depth FROM users WHERE parent_id IS NULL
+                    SELECT id, parent_id, 1 as depth FROM users WHERE parent_id IS NULL AND deleted_at IS NULL
                     UNION ALL
                     SELECT u.id, u.parent_id, h.depth + 1 
                     FROM users u 
                     JOIN hierarchy h ON u.parent_id = h.id
+                    WHERE u.deleted_at IS NULL
                 )
                 SELECT COALESCE(MAX(depth), 1) FROM hierarchy
             """)
             max_depth = cursor.fetchone()[0]
             
+            log.info(f"[RBAC] Stats: {user_count} users, {role_count} roles, {permission_count} permissions")
             return jsonify({
                 "users": user_count,
                 "roles": role_count,
                 "permissions": permission_count,
-                "max_depth": max_depth
+                "max_depth": max_depth,
+                "fallback": False
             })
             
     except Exception as e:
-        log.error(f"Error getting RBAC stats: {e}")
+        log.error(f"[RBAC] Error getting RBAC stats: {e}")
         return jsonify({
-            "users": 1,
-            "roles": 1, 
-            "permissions": 8,
-            "max_depth": 1
-        })
+            "error": "Failed to fetch RBAC statistics",
+            "code": "DB_QUERY_ERROR",
+            "details": str(e)
+        }), 500
     finally:
         conn.close()
 
 @app.route('/api/rbac/discover-permissions', methods=['POST'])
-@login_required
+@api_key_or_login_required
 def discover_permissions_api():
     """API endpoint to trigger permission discovery"""
     try:
-        # Simulate permission discovery
-        new_permissions = [
+        data = request.get_json() or {}
+        
+        # Get permissions to discover from request, or use defaults
+        permissions_to_discover = data.get('permissions', [
             'system.admin.full_access',
             'users.create',
-            'users.edit',
+            'users.edit', 
             'users.delete',
             'roles.manage',
             'hardware.view',
-            'software.manage'
-        ]
+            'software.manage',
+            'devices.create',
+            'devices.edit',
+            'devices.control',
+            'projects.create',
+            'projects.edit',
+            'projects.manage_users'
+        ])
         
         conn = get_db_connection()
-        discovered_count = 0
+        if not conn:
+            log.error("[RBAC] Database connection failed for permission discovery")
+            return jsonify({
+                "success": False,
+                "error": "Database connection failed",
+                "code": "DB_CONNECTION_ERROR"
+            }), 500
         
-        if conn:
-            try:
-                with conn.cursor() as cursor:
-                    for perm in new_permissions:
+        discovered_count = 0
+        errors = []
+        
+        try:
+            with conn.cursor() as cursor:
+                for perm in permissions_to_discover:
+                    try:
                         # Check if permission already exists
-                        cursor.execute("SELECT id FROM permissions WHERE key = %s", (perm,))
+                        cursor.execute("SELECT id FROM permissions WHERE key = %s AND deleted_at IS NULL", (perm,))
                         if not cursor.fetchone():
                             # Insert new permission
                             cursor.execute("""
-                                INSERT INTO permissions (key, display_name, description, category, auto_discovered)
-                                VALUES (%s, %s, %s, %s, %s)
+                                INSERT INTO permissions (key, display_name, description, category, auto_discovered, created_at)
+                                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                             """, (perm, perm.replace('_', ' ').title(), f"Auto-discovered: {perm}", 
                                  perm.split('.')[0], True))
                             discovered_count += 1
-                    
-                    conn.commit()
-            finally:
-                conn.close()
+                    except Exception as e:
+                        errors.append(f"Failed to process permission '{perm}': {str(e)}")
+                
+                conn.commit()
+                log.info(f"[RBAC] Permission discovery completed: {discovered_count} new permissions")
+                
+        except Exception as e:
+            conn.rollback()
+            log.error(f"[RBAC] Error during permission discovery: {e}")
+            return jsonify({
+                "success": False,
+                "error": "Database operation failed",
+                "code": "DB_QUERY_ERROR",
+                "details": str(e)
+            }), 500
+        finally:
+            conn.close()
         
         return jsonify({
             "success": True,
             "message": f"Permission discovery completed. Found {discovered_count} new permissions.",
-            "count": discovered_count
+            "discovered_count": discovered_count,
+            "total_processed": len(permissions_to_discover),
+            "errors": errors
         })
     except Exception as e:
-        log.error(f"Error discovering permissions: {e}")
+        log.error(f"[RBAC] Error in permission discovery endpoint: {e}")
         return jsonify({
             "success": False,
-            "error": str(e)
+            "error": "Server error during permission discovery",
+            "code": "SERVER_ERROR",
+            "details": str(e)
         }), 500
 
 @app.route('/api/rbac/recent-discoveries', methods=['GET'])
@@ -1159,18 +1246,21 @@ def get_user_hierarchy_api():
         conn.close()
 
 @app.route('/api/rbac/users', methods=['GET'])
-@login_required
+@api_key_or_login_required
 def get_rbac_users():
     """Get all users with role information"""
     conn = get_db_connection()
     if not conn:
-        return jsonify([])
+        log.error("[RBAC] Database connection failed for /api/rbac/users")
+        return jsonify({"error": "Database connection failed", "code": "DB_CONNECTION_ERROR"}), 500
     
     try:
         with conn.cursor() as cursor:
             cursor.execute("""
-                SELECT u.id, u.email, u.name, 'admin' as role
+                SELECT u.id, u.email, u.name, COALESCE(pu.role_name, 'user') as role
                 FROM users u
+                LEFT JOIN project_users pu ON u.id = pu.user_id AND pu.deleted_at IS NULL
+                WHERE u.deleted_at IS NULL
                 ORDER BY u.name, u.email
             """)
             
@@ -1183,10 +1273,11 @@ def get_rbac_users():
                     "role": row[3]
                 })
             
+            log.info(f"[RBAC] Successfully fetched {len(users)} users")
             return jsonify(users)
     except Exception as e:
-        log.error(f"Error getting users: {e}")
-        return jsonify([])
+        log.error(f"[RBAC] Error getting users: {e}")
+        return jsonify({"error": "Failed to fetch users", "code": "DB_QUERY_ERROR", "details": str(e)}), 500
     finally:
         conn.close()
 
@@ -1397,33 +1488,61 @@ def update_user_permission(user_id):
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route('/api/rbac/roles', methods=['GET'])
-@login_required
+@api_key_or_login_required
 def get_rbac_roles():
-    """Get all roles"""
-    roles = [
-        {
-            "name": "Super Admin",
-            "description": "Full system access",
-            "permission_count": 15
-        },
-        {
-            "name": "Admin", 
-            "description": "Administrative access",
-            "permission_count": 10
-        },
-        {
-            "name": "Manager",
-            "description": "Management level access",
-            "permission_count": 8
-        },
-        {
-            "name": "User",
-            "description": "Basic user access", 
-            "permission_count": 5
-        }
-    ]
+    """Get all roles with enhanced information - CONSOLIDATED VERSION"""
+    conn = get_db_connection()
+    if not conn:
+        log.error("[RBAC] Database connection failed for /api/rbac/roles")
+        # Return fallback roles when database is unavailable
+        return jsonify({
+            "roles": [
+                {"name": "admin", "description": "Administrator with full access", "permission_count": 10},
+                {"name": "manager", "description": "Manager with limited access", "permission_count": 6},
+                {"name": "user", "description": "Basic user access", "permission_count": 3}
+            ],
+            "fallback": True,
+            "warning": "Database connection failed, showing default roles"
+        }), 200
     
-    return jsonify(roles)
+    try:
+        with conn.cursor() as cursor:
+            # Get all roles from both tables and count their permissions
+            cursor.execute("""
+                SELECT 
+                    r.name, 
+                    r.description, 
+                    COUNT(rp.permission_key) as permission_count,
+                    r.created_at
+                FROM (
+                    SELECT DISTINCT role_name as name, 'System role' as description, NOW() as created_at
+                    FROM role_permissions
+                    WHERE deleted_at IS NULL
+                    UNION
+                    SELECT name, description, created_at FROM roles WHERE deleted_at IS NULL
+                ) r
+                LEFT JOIN role_permissions rp ON r.name = rp.role_name AND rp.deleted_at IS NULL
+                GROUP BY r.name, r.description, r.created_at
+                ORDER BY r.name
+            """)
+            
+            roles = []
+            for row in cursor.fetchall():
+                roles.append({
+                    "name": row[0],
+                    "description": row[1] or f"Role: {row[0]}",
+                    "permission_count": row[2] or 0,
+                    "created_at": row[3].isoformat() if row[3] else None
+                })
+            
+            log.info(f"[RBAC] Successfully fetched {len(roles)} roles")
+            return jsonify({"roles": roles, "fallback": False})
+            
+    except Exception as e:
+        log.error(f"[RBAC] Error getting roles: {e}")
+        return jsonify({"error": "Failed to fetch roles", "code": "DB_QUERY_ERROR", "details": str(e)}), 500
+    finally:
+        conn.close()
 
 @app.route('/api/rbac/hardware', methods=['GET'])
 @login_required
@@ -1505,18 +1624,30 @@ def get_audit_logs():
 # Add this route to your gbd_multi_super_enhanced.py
 
 @app.route('/api/rbac/permissions', methods=['GET'])
-@login_required
+@api_key_or_login_required
 def get_all_permissions():
     """Get all available permissions"""
     conn = get_db_connection()
     if not conn:
-        return jsonify([])
+        log.error("[RBAC] Database connection failed for /api/rbac/permissions")
+        # Return fallback permissions with proper error context
+        return jsonify({
+            "permissions": [
+                {"key": "page_dashboard", "display_name": "Dashboard Access", "category": "page", "description": "Access to dashboard", "icon": "fas fa-tachometer-alt"},
+                {"key": "page_device_list", "display_name": "Device List Access", "category": "page", "description": "View device list", "icon": "fas fa-list"},
+                {"key": "page_tester", "display_name": "Device Tester Access", "category": "page", "description": "Access device tester", "icon": "fas fa-vial"},
+                {"key": "permission_admin_only", "display_name": "Admin Only Access", "category": "admin", "description": "Administrator privileges", "icon": "fas fa-user-shield"}
+            ],
+            "fallback": True,
+            "warning": "Database connection failed, showing default permissions"
+        }), 200
     
     try:
         with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT key, display_name, description, category, icon
                 FROM permissions 
+                WHERE deleted_at IS NULL
                 ORDER BY category, display_order, display_name
             """)
             
@@ -1530,16 +1661,11 @@ def get_all_permissions():
                     "icon": row[4] or "fas fa-circle"
                 })
             
-            return jsonify(permissions)
+            log.info(f"[RBAC] Successfully fetched {len(permissions)} permissions")
+            return jsonify({"permissions": permissions, "fallback": False})
     except Exception as e:
-        log.error(f"Error getting permissions: {e}")
-        # Return fallback permissions
-        return jsonify([
-            {"key": "page_dashboard", "display_name": "Dashboard Access", "category": "page"},
-            {"key": "page_device_list", "display_name": "Device List Access", "category": "page"},
-            {"key": "page_tester", "display_name": "Device Tester Access", "category": "page"},
-            {"key": "permission_admin_only", "display_name": "Admin Only Access", "category": "admin"}
-        ])
+        log.error(f"[RBAC] Error getting permissions: {e}")
+        return jsonify({"error": "Failed to fetch permissions", "code": "DB_QUERY_ERROR", "details": str(e)}), 500
     finally:
         conn.close()
 
@@ -2658,45 +2784,6 @@ def get_rbac_users_enhanced():
     finally:
         conn.close()
 
-@app.route('/api/rbac/roles', methods=['GET'])
-@login_required
-def get_rbac_roles_enhanced():
-    """Get all roles with enhanced information"""
-    conn = get_db_connection()
-    if not conn:
-        return jsonify([])
-    
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT r.name, r.description, COUNT(rp.permission_key) as permission_count
-                FROM (
-                    SELECT DISTINCT role_name as name, '' as description
-                    FROM role_permissions
-                    UNION
-                    SELECT name, description FROM roles
-                ) r
-                LEFT JOIN role_permissions rp ON r.name = rp.role_name
-                GROUP BY r.name, r.description
-                ORDER BY r.name
-            """)
-            
-            roles = []
-            for row in cursor.fetchall():
-                roles.append({
-                    "name": row[0],
-                    "description": row[1] or f"{row[0]} role",
-                    "permission_count": row[2] or 0
-                })
-            
-            return jsonify(roles)
-            
-    except Exception as e:
-        log.error(f"Error getting roles: {e}")
-        return jsonify([])
-    finally:
-        conn.close()
-
 @app.route('/api/rbac/stats', methods=['GET'])
 @login_required
 def get_rbac_stats_enhanced():
@@ -3366,32 +3453,40 @@ def api_rbac_update_role_permissions(role_name):
         return jsonify({"error": f"Server error: {str(e)}"}), 500
         
 @app.route('/api/rbac/roles/<role_name>/permissions')
-@login_required
+@api_key_or_login_required
 @requires_permission('page_rbac_management')
 def api_rbac_role_permissions(role_name):
-    """Get permissions for a specific role - FIXED VERSION"""
+    """Get permissions for a specific role - IMPROVED VERSION"""
     try:
         log.info(f"[RBAC] Fetching permissions for role: {role_name}")
-        log.info(f"[RBAC] Time: 2025-07-30 04:26:42 UTC, User: nishantng25")
         
         conn = get_db_connection()
         if not conn:
             log.error("[RBAC] Database connection failed")
-            return jsonify({"error": "Database connection failed"}), 500
+            return jsonify({
+                "error": "Database connection failed",
+                "code": "DB_CONNECTION_ERROR",
+                "role_name": role_name
+            }), 500
         
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 # First check if role exists
                 cursor.execute("""
                     SELECT COUNT(*) as count FROM role_permissions 
-                    WHERE role_name = %s
+                    WHERE role_name = %s AND (deleted_at IS NULL OR deleted_at = '')
                 """, (role_name,))
                 
                 role_exists = cursor.fetchone()['count'] > 0
                 
                 if not role_exists:
                     log.warning(f"[RBAC] Role '{role_name}' not found")
-                    return jsonify([])  # Return empty array for non-existent roles
+                    return jsonify({
+                        "permissions": [],
+                        "role_name": role_name,
+                        "exists": False,
+                        "message": f"Role '{role_name}' has no permissions assigned"
+                    }), 200
                 
                 # Get permissions for the role
                 cursor.execute("""
@@ -3400,9 +3495,10 @@ def api_rbac_role_permissions(role_name):
                         COALESCE(rp.permission_type, 'allow') as permission_type,
                         COALESCE(p.display_name, rp.permission_key) as display_name,
                         COALESCE(p.description, 'No description available') as description,
-                        COALESCE(p.category, 'general') as category
+                        COALESCE(p.category, 'general') as category,
+                        rp.created_at
                     FROM role_permissions rp
-                    LEFT JOIN permissions p ON rp.permission_key = p.key
+                    LEFT JOIN permissions p ON rp.permission_key = p.key AND (p.deleted_at IS NULL OR p.deleted_at = '')
                     WHERE rp.role_name = %s
                     AND (rp.deleted_at IS NULL OR rp.deleted_at = '')
                     ORDER BY COALESCE(p.category, 'general'), rp.permission_key
@@ -3417,23 +3513,38 @@ def api_rbac_role_permissions(role_name):
                         "permission_type": perm['permission_type'],
                         "display_name": perm['display_name'],
                         "description": perm['description'],
-                        "category": perm['category']
+                        "category": perm['category'],
+                        "created_at": perm['created_at'].isoformat() if perm['created_at'] else None
                     })
                 
-                log.info(f"[RBAC] Found {len(formatted_permissions)} permissions for role {role_name}")
+                log.info(f"[RBAC] Successfully fetched {len(formatted_permissions)} permissions for role '{role_name}'")
                 
-                return jsonify(formatted_permissions)
+                return jsonify({
+                    "permissions": formatted_permissions,
+                    "role_name": role_name,
+                    "exists": True,
+                    "count": len(formatted_permissions)
+                })
                 
         except Exception as db_error:
-            log.error(f"[RBAC] Database error fetching role permissions: {db_error}")
-            log.error(f"[RBAC] Error details: {str(db_error)}")
-            return jsonify({"error": f"Database error: {str(db_error)}"}), 500
+            log.error(f"[RBAC] Database error getting role permissions: {db_error}")
+            return jsonify({
+                "error": "Database query failed",
+                "code": "DB_QUERY_ERROR",
+                "details": str(db_error),
+                "role_name": role_name
+            }), 500
         finally:
             conn.close()
             
     except Exception as e:
         log.error(f"[RBAC] Error in api_rbac_role_permissions: {e}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({
+            "error": "Server error",
+            "code": "SERVER_ERROR",
+            "details": str(e),
+            "role_name": role_name
+        }), 500
 
 @app.route('/api/rbac/debug/role/<role_name>')
 @login_required
@@ -3529,10 +3640,10 @@ log.info(f"Enhanced error handling enabled")
 
 # Updated routes that work without deleted_at column initially
 
-@app.route('/api/rbac/roles')
+@app.route('/api/rbac/roles/detailed')
 @login_required
 @requires_permission('page_rbac_management')
-def api_rbac_roles():
+def api_rbac_roles_detailed():
     """Get all roles with their permission counts - Updated"""
     conn = get_db_connection()
     if not conn:
