@@ -1256,18 +1256,18 @@ def get_user_permissions_detail(user_id):
                 
                 # Get all available permissions
                 cursor.execute("""
-                    SELECT permission_key, description, category
+                    SELECT key, description, category
                     FROM permissions
                     WHERE deleted_at IS NULL
-                    ORDER BY category, permission_key
+                    ORDER BY category, key
                 """)
                 all_permissions = cursor.fetchall()
                 
-                # Get user-specific permission overrides
+                # Get user-specific permission overrides - FIXED: use correct column name
                 cursor.execute("""
                     SELECT permission_key, permission_type
                     FROM user_permissions
-                    WHERE user_id = %s AND deleted_at IS NULL
+                    WHERE user_id = %s AND permission_key IS NOT NULL AND deleted_at IS NULL
                 """, (user_id,))
                 user_overrides = {row['permission_key']: row['permission_type'] for row in cursor.fetchall()}
                 
@@ -1282,7 +1282,7 @@ def get_user_permissions_detail(user_id):
                 # Build the permissions list with source information
                 permissions = []
                 for perm in all_permissions:
-                    permission_key = perm['permission_key']
+                    permission_key = perm['key']  # FIXED: use 'key' instead of 'permission_key'
                     
                     # Determine the source and type
                     if permission_key in user_overrides:
@@ -1358,7 +1358,23 @@ def update_user_permission(user_id):
                 user_email = user[1]
                 log.info(f"Updating permission for user: {user_email} (ID: {user_id})")
                 
-                # Update or insert user permission using ON CONFLICT
+                # Check if user_permissions table has permission_key column
+                cursor.execute("""
+                    SELECT column_name FROM information_schema.columns 
+                    WHERE table_name = 'user_permissions' AND column_name = 'permission_key'
+                """)
+                
+                has_permission_key = cursor.fetchone() is not None
+                
+                if not has_permission_key:
+                    # Add the column if it doesn't exist
+                    cursor.execute("""
+                        ALTER TABLE user_permissions 
+                        ADD COLUMN permission_key VARCHAR(100)
+                    """)
+                    log.info("Added permission_key column to user_permissions table")
+                
+                # Update or insert user permission using ON CONFLICT - FIXED: use correct column name
                 cursor.execute("""
                     INSERT INTO user_permissions (user_id, permission_key, permission_type, created_at, updated_at)
                     VALUES (%s, %s, %s, %s, %s)
@@ -3295,11 +3311,11 @@ def api_rbac_update_role_permissions(role_name):
         
         try:
             with conn.cursor() as cursor:
-                # First, check if role exists in project_users (case-insensitive)
+                # First, check if role exists in project_users (case-insensitive) - FIXED: removed invalid timestamp comparison
                 cursor.execute("""
                     SELECT DISTINCT role_name FROM project_users 
                     WHERE LOWER(role_name) = LOWER(%s)
-                    AND (deleted_at IS NULL OR deleted_at = '')
+                    AND deleted_at IS NULL
                 """, (role_name,))
                 
                 existing_role = cursor.fetchone()
@@ -3307,6 +3323,15 @@ def api_rbac_update_role_permissions(role_name):
                 if not existing_role:
                     # Create the role entry if it doesn't exist
                     log.info(f"[RBAC] Role {role_name} not found, creating entry...")
+                    
+                    # First, create the role in the roles table
+                    cursor.execute("""
+                        INSERT INTO roles (name, description, created_at)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (name) DO NOTHING
+                    """, (role_name, f"Custom role: {role_name}", datetime.utcnow()))
+                    
+                    # Then create the project assignment
                     cursor.execute("""
                         INSERT INTO project_users (project_id, user_id, role_name, created_at)
                         VALUES (1, 1, %s, %s)
@@ -3314,7 +3339,7 @@ def api_rbac_update_role_permissions(role_name):
                     """, (role_name, datetime.utcnow(), role_name))
                     actual_role_name = role_name
                 else:
-                    actual_role_name = existing_role['role_name']
+                    actual_role_name = existing_role[0]
                 
                 log.info(f"[RBAC] Using role name: {actual_role_name}")
                 
@@ -3393,7 +3418,7 @@ def api_rbac_role_permissions(role_name):
                     log.warning(f"[RBAC] Role '{role_name}' not found")
                     return jsonify([])  # Return empty array for non-existent roles
                 
-                # Get permissions for the role
+                # Get permissions for the role - FIXED: removed invalid timestamp comparison
                 cursor.execute("""
                     SELECT 
                         rp.permission_key,
@@ -3404,7 +3429,7 @@ def api_rbac_role_permissions(role_name):
                     FROM role_permissions rp
                     LEFT JOIN permissions p ON rp.permission_key = p.key
                     WHERE rp.role_name = %s
-                    AND (rp.deleted_at IS NULL OR rp.deleted_at = '')
+                    AND rp.deleted_at IS NULL
                     ORDER BY COALESCE(p.category, 'general'), rp.permission_key
                 """, (role_name,))
                 
