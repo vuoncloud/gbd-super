@@ -37,6 +37,10 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# Configuration constants for device fail-safe behavior
+ROLLBACK_TIMEOUT = int(os.environ.get('CONFIG_ROLLBACK_TIMEOUT', '300'))  # 5 minutes default
+WIFI_REBOOT_TIMEOUT = int(os.environ.get('WIFI_REBOOT_TIMEOUT', '1800'))  # 30 minutes default
+
 # Create Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'a_very_secret_key')
@@ -1912,10 +1916,13 @@ def update_device_config(mac_address):
             # Add MAC address for WHERE clause
             values.append(mac_address)
             
-            # Update device configuration
+            # Update device configuration with rollback timer initialization
             update_query = f"""
                 UPDATE devices 
-                SET {', '.join(update_fields)}, updated_at = CURRENT_TIMESTAMP
+                SET {', '.join(update_fields)}, 
+                    config_update_pending = TRUE,
+                    rollback_start_time = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE mac_address = %s
             """
             
@@ -1926,18 +1933,119 @@ def update_device_config(mac_address):
             
             conn.commit()
             
-            # Log the configuration change
-            log.info(f"Device config updated: {mac_address} by user {current_user.id}")
+            # Log the configuration change with rollback timer
+            log.info(f"Device config updated: {mac_address} by user {current_user.id} - "
+                    f"rollback timer started ({ROLLBACK_TIMEOUT}s timeout)")
             
             return jsonify({
                 "success": True,
-                "message": "Device configuration updated successfully",
-                "updated_fields": list(config_fields.keys())
+                "message": "Device configuration updated successfully - rollback timer started",
+                "updated_fields": list(config_fields.keys()),
+                "rollback_timeout_seconds": ROLLBACK_TIMEOUT
             })
             
     except Exception as e:
         log.error(f"Error updating device config: {e}")
         conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/device/<mac_address>/config/commit', methods=['POST'])
+@login_required
+@requires_permission('devices.edit')
+def commit_device_config(mac_address):
+    """Commit device configuration changes and clear rollback timer"""
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    
+    try:
+        with conn.cursor() as cursor:
+            # Clear config update pending status and rollback timer
+            cursor.execute("""
+                UPDATE devices 
+                SET config_update_pending = FALSE,
+                    rollback_start_time = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE mac_address = %s AND config_update_pending = TRUE
+            """, (mac_address,))
+            
+            if cursor.rowcount == 0:
+                return jsonify({"error": "Device not found or no pending config update"}), 404
+            
+            conn.commit()
+            
+            # Log the configuration commit
+            log.info(f"Device config committed: {mac_address} by user {current_user.id} - rollback timer cleared")
+            
+            return jsonify({
+                "success": True,
+                "message": "Device configuration committed successfully"
+            })
+            
+    except Exception as e:
+        log.error(f"Error committing device config: {e}")
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/device/<mac_address>/config/status', methods=['GET'])
+@login_required
+@requires_permission('devices.view')
+def get_device_config_status(mac_address):
+    """Get device configuration rollback status"""
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT device_id, config_update_pending, rollback_start_time, 
+                       config_rollback_timeout, wifi_ssid, mqtt_host
+                FROM devices 
+                WHERE mac_address = %s
+            """, (mac_address,))
+            
+            device = cursor.fetchone()
+            if not device:
+                return jsonify({"error": "Device not found"}), 404
+            
+            device_id, config_pending, rollback_start, rollback_timeout, wifi_ssid, mqtt_host = device
+            
+            status = {
+                "device_id": device_id,
+                "mac_address": mac_address,
+                "config_update_pending": config_pending,
+                "rollback_timeout_seconds": rollback_timeout or ROLLBACK_TIMEOUT,
+                "wifi_ssid": wifi_ssid,
+                "mqtt_host": mqtt_host
+            }
+            
+            if config_pending and rollback_start:
+                elapsed = (datetime.utcnow() - rollback_start.replace(tzinfo=None)).total_seconds()
+                timeout = rollback_timeout or ROLLBACK_TIMEOUT
+                
+                status.update({
+                    "rollback_start_time": rollback_start.isoformat(),
+                    "elapsed_seconds": int(elapsed),
+                    "remaining_seconds": max(0, int(timeout - elapsed)),
+                    "rollback_exceeded": elapsed > timeout
+                })
+            else:
+                status.update({
+                    "rollback_start_time": None,
+                    "elapsed_seconds": 0,
+                    "remaining_seconds": 0,
+                    "rollback_exceeded": False
+                })
+            
+            return jsonify(status)
+            
+    except Exception as e:
+        log.error(f"Error getting device config status: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
@@ -2013,23 +2121,45 @@ def trigger_ota_update(mac_address):
 @login_required
 @requires_permission('devices.control')
 def reboot_device(mac_address):
-    """Reboot device remotely"""
+    """Reboot device remotely - respects config rollback priority"""
+    # Check if config rollback should prevent WiFi reboot
+    if should_prevent_wifi_reboot(mac_address):
+        return jsonify({
+            "error": "Reboot prevented - config rollback pending",
+            "message": "Device has a pending configuration update that takes priority over reboot. Wait for rollback timeout or commit config first."
+        }), 409
+    
     conn = get_db_connection()
     if not conn:
         return jsonify({"error": "Database connection failed"}), 500
     
     try:
         with conn.cursor() as cursor:
-            # Check if device exists
-            cursor.execute("SELECT device_id FROM devices WHERE mac_address = %s", (mac_address,))
+            # Check if device exists and get rollback status
+            cursor.execute("""
+                SELECT device_id, config_update_pending, rollback_start_time 
+                FROM devices 
+                WHERE mac_address = %s
+            """, (mac_address,))
             device = cursor.fetchone()
             
             if not device:
                 return jsonify({"error": "Device not found"}), 404
             
-            device_id = device[0]
+            device_id, config_pending, rollback_start = device
             
-            # Here you would send MQTT reboot command
+            # Double-check config rollback priority
+            if config_pending and rollback_start:
+                elapsed = (datetime.utcnow() - rollback_start.replace(tzinfo=None)).total_seconds()
+                if elapsed < ROLLBACK_TIMEOUT:
+                    log.warning(f"Reboot request denied for {device_id} ({mac_address}) - "
+                               f"config rollback pending ({elapsed:.0f}s/{ROLLBACK_TIMEOUT}s)")
+                    return jsonify({
+                        "error": "Reboot denied - config rollback takes priority",
+                        "rollback_remaining_seconds": int(ROLLBACK_TIMEOUT - elapsed)
+                    }), 409
+            
+            # Send MQTT reboot command
             reboot_command = {
                 "command": "reboot",
                 "timestamp": datetime.utcnow().isoformat(),
@@ -3787,6 +3917,42 @@ def check_and_update_schema():
                     except Exception as e:
                         log.warning(f"Could not add updated_at to {table}: {e}")
             
+            # Add config rollback columns to devices table
+            config_rollback_columns = [
+                ('config_update_pending', 'BOOLEAN DEFAULT FALSE'),
+                ('rollback_start_time', 'TIMESTAMP WITH TIME ZONE'),
+                ('config_rollback_timeout', 'INTEGER DEFAULT 300')
+            ]
+            
+            for column_name, column_def in config_rollback_columns:
+                cursor.execute("""
+                    SELECT column_name FROM information_schema.columns 
+                    WHERE table_name = 'devices' AND column_name = %s
+                """, (column_name,))
+                
+                if not cursor.fetchone():
+                    log.info(f"Adding {column_name} column to devices table")
+                    try:
+                        cursor.execute(f"ALTER TABLE devices ADD COLUMN {column_name} {column_def}")
+                    except Exception as e:
+                        log.warning(f"Could not add {column_name} to devices: {e}")
+            
+            # Add indexes for config rollback queries
+            try:
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_devices_config_pending 
+                    ON devices(config_update_pending) 
+                    WHERE config_update_pending = TRUE
+                """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_devices_rollback_time 
+                    ON devices(rollback_start_time) 
+                    WHERE rollback_start_time IS NOT NULL
+                """)
+                log.info("Config rollback indexes created")
+            except Exception as e:
+                log.warning(f"Could not create config rollback indexes: {e}")
+            
             conn.commit()
             log.info("Database schema updated successfully")
             return True
@@ -4043,6 +4209,131 @@ def quick_database_fix():
     finally:
         conn.close()
         
+# ====================================
+# CONFIG ROLLBACK PRIORITY MANAGEMENT
+# ====================================
+
+def check_config_rollback_timeouts():
+    """
+    Check for devices with pending config updates that have exceeded rollback timeout.
+    This takes priority over WiFi fail-safe mechanisms.
+    """
+    conn = get_db_connection()
+    if not conn:
+        log.error("Failed to connect to database for config rollback check")
+        return
+
+    try:
+        with conn.cursor() as cursor:
+            # Find devices with pending config updates that have exceeded timeout
+            cursor.execute("""
+                SELECT mac_address, device_id, rollback_start_time, config_rollback_timeout
+                FROM devices 
+                WHERE config_update_pending = TRUE 
+                AND rollback_start_time IS NOT NULL
+                AND (EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - rollback_start_time)) > COALESCE(config_rollback_timeout, %s))
+            """, (ROLLBACK_TIMEOUT,))
+            
+            devices_to_rollback = cursor.fetchall()
+            
+            for device in devices_to_rollback:
+                mac_address, device_id, rollback_start_time, timeout = device
+                elapsed_time = (datetime.utcnow() - rollback_start_time.replace(tzinfo=None)).total_seconds()
+                
+                log.info(f"Config rollback timeout exceeded for device {device_id} ({mac_address}). "
+                        f"Elapsed: {elapsed_time:.0f}s, Timeout: {timeout or ROLLBACK_TIMEOUT}s")
+                
+                # Send rollback command via MQTT
+                rollback_command = {
+                    "command": "config_rollback",
+                    "reason": "rollback_timeout_exceeded", 
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "elapsed_seconds": int(elapsed_time)
+                }
+                
+                try:
+                    # Publish rollback command to device
+                    mqtt_topic = f"device/{mac_address}/commands"
+                    log.info(f"Sending config rollback command to {device_id}: {json.dumps(rollback_command)}")
+                    
+                    # Reset config update pending status
+                    cursor.execute("""
+                        UPDATE devices 
+                        SET config_update_pending = FALSE, 
+                            rollback_start_time = NULL,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE mac_address = %s
+                    """, (mac_address,))
+                    
+                    log.info(f"Config rollback initiated for device {device_id} after {elapsed_time:.0f}s timeout")
+                    
+                except Exception as e:
+                    log.error(f"Failed to send rollback command to device {device_id}: {e}")
+            
+            if devices_to_rollback:
+                conn.commit()
+                log.info(f"Processed {len(devices_to_rollback)} devices for config rollback")
+                
+    except Exception as e:
+        log.error(f"Error checking config rollback timeouts: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+def should_prevent_wifi_reboot(mac_address):
+    """
+    Check if WiFi fail-safe reboot should be prevented due to pending config rollback.
+    Config rollback takes priority over WiFi fail-safe mechanisms.
+    """
+    conn = get_db_connection()
+    if not conn:
+        return False
+        
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT config_update_pending, rollback_start_time, config_rollback_timeout
+                FROM devices 
+                WHERE mac_address = %s
+            """, (mac_address,))
+            
+            result = cursor.fetchone()
+            if not result:
+                return False
+                
+            config_pending, rollback_start, timeout = result
+            
+            if config_pending and rollback_start:
+                elapsed = (datetime.utcnow() - rollback_start.replace(tzinfo=None)).total_seconds()
+                rollback_timeout = timeout or ROLLBACK_TIMEOUT
+                
+                if elapsed < rollback_timeout:
+                    log.info(f"Preventing WiFi reboot for device {mac_address} - config rollback pending "
+                            f"({elapsed:.0f}s/{rollback_timeout}s)")
+                    return True
+                    
+    except Exception as e:
+        log.error(f"Error checking config rollback status for {mac_address}: {e}")
+    finally:
+        conn.close()
+        
+    return False
+
+def start_config_rollback_monitor():
+    """Start background monitoring of config rollback timeouts"""
+    def monitor():
+        while True:
+            try:
+                check_config_rollback_timeouts()
+                time.sleep(30)  # Check every 30 seconds
+            except Exception as e:
+                log.error(f"Config rollback monitor error: {e}")
+                time.sleep(60)  # Wait longer on error
+    
+    monitor_thread = threading.Thread(target=monitor, daemon=True)
+    monitor_thread.start()
+    log.info("Config rollback monitor started")
+
 # Call this when server starts
 log.info(f"[RBAC] Checking database schema at 2025-07-30 03:36:39 UTC")
 log.info(f"[RBAC] Current user: nishantng25")
@@ -4057,6 +4348,9 @@ if __name__ == '__main__':
     log.info("Starting Enhanced RBAC Goldbox Management System")
     ensure_rbac_tables()
 
+    # Start config rollback monitoring - takes priority over WiFi fail-safe
+    start_config_rollback_monitor()
+    
     # Start monitoring directly
     device_status_manager.start_monitoring()
     
